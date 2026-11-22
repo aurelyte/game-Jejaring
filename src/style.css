@@ -157,6 +157,14 @@ h1 {
   color: #fff;
 }
 
+/* ----- canvas stage ----- */
+.canvas-stage {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+  overflow: hidden;
+}
+
 /* ----- canvas ----- */
 #drawCanvas {
   display: block;
@@ -169,12 +177,15 @@ h1 {
 /* ----- custom brush cursor ----- */
 #brushCursor {
   position: absolute;
+  top: 0;
+  left: 0;
   pointer-events: none;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.8);
+  border: 2px solid rgba(255, 255, 255, 0.85);
   transform: translate(-50%, -50%);
   display: none;
   mix-blend-mode: difference;
+  z-index: 10;
 }
 
 /* ============================================================

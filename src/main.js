@@ -641,8 +641,12 @@ btnLeaveRoom.addEventListener('click', showLobby);
  * ============================================================ */
 
 function resize() {
-  const w = canvas.offsetWidth;
-  if (w === 0) return;
+  const rect = canvas.getBoundingClientRect();
+  const cssWidth = canvas.clientWidth || rect.width;
+  if (!cssWidth || cssWidth === 0) return;
+
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const cssHeight = Math.round(cssWidth * (9 / 16));
 
   const tmp  = document.createElement('canvas');
   tmp.width  = canvas.width;
@@ -651,22 +655,25 @@ function resize() {
     tmp.getContext('2d').drawImage(canvas, 0, 0);
   }
 
-  const h = Math.round(w * (9 / 16));
-  canvas.width        = w;
-  canvas.height       = h;
-  canvas.style.height = `${h}px`;
+  canvas.style.width  = '100%';
+  canvas.style.height = `${cssHeight}px`;
+
+  canvas.width  = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
 
   if (tmp.width > 0 && tmp.height > 0) {
-    ctx.drawImage(tmp, 0, 0);
+    ctx.drawImage(tmp, 0, 0, tmp.width, tmp.height, 0, 0, canvas.width, canvas.height);
   }
   applyCtxDefaults();
 }
 
 function applyCtxDefaults() {
+  const rect = canvas.getBoundingClientRect();
+  const scale = rect.width > 0 ? (canvas.width / rect.width) : 1;
   ctx.lineCap     = 'round';
   ctx.lineJoin    = 'round';
   ctx.strokeStyle = state.color;
-  ctx.lineWidth   = state.size;
+  ctx.lineWidth   = state.size * scale;
 }
 
 /* ============================================================
@@ -675,8 +682,8 @@ function applyCtxDefaults() {
 
 function canvasPoint(e) {
   const rect   = canvas.getBoundingClientRect();
-  const scaleX = canvas.width  / rect.width;
-  const scaleY = canvas.height / rect.height;
+  const scaleX = rect.width  > 0 ? (canvas.width  / rect.width)  : 1;
+  const scaleY = rect.height > 0 ? (canvas.height / rect.height) : 1;
   return {
     x: (e.clientX - rect.left) * scaleX,
     y: (e.clientY - rect.top)  * scaleY,
@@ -685,10 +692,12 @@ function canvasPoint(e) {
 
 function flushStrokeBatch() {
   if (currentBatchPoints.length > 1) {
+    const rect = canvas.getBoundingClientRect();
+    const sizeRatio = rect.width > 0 ? (state.size / rect.width) : (state.size / canvas.width);
     sendStroke({
       points:    currentBatchPoints,
       color:     state.color,
-      sizeRatio: state.size / canvas.width,
+      sizeRatio,
       isStart:   isBatchStart,
       isEnd:     false,
     });
@@ -701,16 +710,27 @@ function startDraw(e) {
   /* HANYA drawer yang diizinkan menggambar */
   if (!state.isDrawer) return;
 
+  // Hanya proses primary pointer (left click mouse atau touch utama)
+  if (e.isPrimary === false || (e.pointerType === 'mouse' && e.button !== 0)) return;
+
   e.preventDefault();
-  canvas.setPointerCapture(e.pointerId);
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch (_) {}
+
+  showCursor();
+  updateCursor(e);
 
   const { x, y } = canvasPoint(e);
   state.drawing  = true;
   state.lastX    = x;
   state.lastY    = y;
 
+  const rect = canvas.getBoundingClientRect();
+  const scale = rect.width > 0 ? (canvas.width / rect.width) : 1;
+
   ctx.beginPath();
-  ctx.arc(x, y, state.size / 2, 0, Math.PI * 2);
+  ctx.arc(x, y, (state.size * scale) / 2, 0, Math.PI * 2);
   ctx.fillStyle = state.color;
   ctx.fill();
 
@@ -729,9 +749,12 @@ function draw(e) {
 
   const { x, y } = canvasPoint(e);
 
+  const rect = canvas.getBoundingClientRect();
+  const scale = rect.width > 0 ? (canvas.width / rect.width) : 1;
+
   ctx.beginPath();
   ctx.strokeStyle = state.color;
-  ctx.lineWidth   = state.size;
+  ctx.lineWidth   = state.size * scale;
   ctx.moveTo(state.lastX, state.lastY);
   ctx.lineTo(x, y);
   ctx.stroke();
@@ -751,14 +774,22 @@ function stopDraw(e) {
   state.drawing = false;
   ctx.closePath();
 
+  if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+  }
+
   clearInterval(batchIntervalId);
   batchIntervalId = null;
 
   if (currentBatchPoints.length > 0) {
+    const rect = canvas.getBoundingClientRect();
+    const sizeRatio = rect.width > 0 ? (state.size / rect.width) : (state.size / canvas.width);
     sendStroke({
       points:    currentBatchPoints,
       color:     state.color,
-      sizeRatio: state.size / canvas.width,
+      sizeRatio,
       isStart:   isBatchStart,
       isEnd:     true,
     });
@@ -836,12 +867,10 @@ function updateCursor(e) {
   const x    = e.clientX - rect.left;
   const y    = e.clientY - rect.top;
 
-  const cssSize = state.size * (rect.width / canvas.width);
-
   brushCursor.style.left   = `${x}px`;
   brushCursor.style.top    = `${y}px`;
-  brushCursor.style.width  = `${cssSize}px`;
-  brushCursor.style.height = `${cssSize}px`;
+  brushCursor.style.width  = `${state.size}px`;
+  brushCursor.style.height = `${state.size}px`;
 }
 
 function showCursor() {
@@ -852,13 +881,24 @@ function hideCursor() {
   brushCursor.style.display = 'none';
 }
 
+function onPointerLeave(e) {
+  // Bila pointer sedang ditangkap (drag melewati batas canvas), tetap render
+  if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+    return;
+  }
+  hideCursor();
+  if (state.drawing) {
+    stopDraw(e);
+  }
+}
+
 /* ============================================================
  * Toolbar Events
  * ============================================================ */
 
 function setColor(hex) {
-  state.color     = hex;
-  ctx.strokeStyle = hex;
+  state.color       = hex;
+  ctx.strokeStyle   = hex;
   colorPicker.value = hex;
 
   document.querySelectorAll('.swatch[data-color]').forEach((el) => {
@@ -873,8 +913,11 @@ document.querySelectorAll('.swatch[data-color]').forEach((btn) => {
 colorPicker.addEventListener('input', (e) => setColor(e.target.value));
 
 function setSize(px) {
-  state.size    = px;
-  ctx.lineWidth = px;
+  state.size = px;
+  applyCtxDefaults();
+
+  brushCursor.style.width  = `${px}px`;
+  brushCursor.style.height = `${px}px`;
 
   document.querySelectorAll('.size-btn').forEach((btn) => {
     btn.classList.toggle('active', Number(btn.dataset.size) === px);
@@ -896,14 +939,24 @@ clearBtn.addEventListener('click', () => {
 });
 
 /* Canvas event listeners */
-canvas.addEventListener('pointerdown',  startDraw,  { passive: false });
-canvas.addEventListener('pointermove',  draw,       { passive: false });
-canvas.addEventListener('pointerup',    stopDraw,   { passive: false });
-canvas.addEventListener('pointerleave', stopDraw,   { passive: false });
-
-canvas.addEventListener('pointermove', updateCursor, { passive: true });
-canvas.addEventListener('pointerenter', showCursor,  { passive: true });
-canvas.addEventListener('pointerleave', hideCursor,  { passive: true });
+canvas.addEventListener('pointerdown',   startDraw,      { passive: false });
+canvas.addEventListener('pointermove',   draw,           { passive: false });
+canvas.addEventListener('pointermove',   updateCursor,   { passive: true });
+canvas.addEventListener('pointerup',     stopDraw,       { passive: false });
+canvas.addEventListener('pointercancel', stopDraw,       { passive: false });
+canvas.addEventListener('pointerenter',  showCursor,     { passive: true });
+canvas.addEventListener('pointerleave',  onPointerLeave, { passive: true });
+canvas.addEventListener('lostpointercapture', () => {
+  if (state.drawing) {
+    state.drawing = false;
+    ctx.closePath();
+    clearInterval(batchIntervalId);
+    batchIntervalId = null;
+    currentBatchPoints = [];
+    isBatchStart = false;
+  }
+  hideCursor();
+});
 
 /* ============================================================
  * [CLIENT - ACTION] Guess Box Handling
