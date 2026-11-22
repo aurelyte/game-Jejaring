@@ -156,6 +156,10 @@
           <span id="roleBadge" class="role-badge role-badge--host">
             👑 Host
           </span>
+          <!-- skor pemain saat ini (Fase 5a) -->
+          <span id="myScoreBadge" class="my-score-badge" title="Skor total Anda">
+            🏆 0 pts
+          </span>
           <button id="btnLeaveRoom" class="btn-leave" title="Keluar dari room">
             Keluar ✕
           </button>
@@ -276,28 +280,44 @@
         </section>
 
         <!-- ===================================================
-             Chat panel (Fase 2b) — broadcast test
+             Grid Bawah: Leaderboard Real-Time & Chat Room (Fase 5a)
              =================================================== -->
-        <section class="chat-section" aria-label="Chat room">
-          <h2 class="chat-heading">💬 Chat Room</h2>
+        <div class="game-bottom-grid">
+          <!-- Leaderboard / Papan Skor Real-Time -->
+          <section class="leaderboard-section" id="leaderboardSection" aria-label="Papan Skor">
+            <div class="leaderboard-header">
+              <h2 class="leaderboard-heading">🏆 Papan Skor</h2>
+              <span class="leaderboard-total-badge" id="leaderboardTotalPlayers">👥 — Pemain</span>
+            </div>
 
-          <!-- message list -->
-          <ol id="chatList" class="chat-list" aria-live="polite" aria-label="Pesan chat"></ol>
+            <!-- List Pemain & Peringkat -->
+            <ol id="leaderboardList" class="leaderboard-list" aria-live="polite">
+              <!-- Rendered via JS -->
+            </ol>
+          </section>
 
-          <!-- send form -->
-          <form id="chatForm" class="chat-form" autocomplete="off" novalidate>
-            <input
-              type="text"
-              id="chatInput"
-              class="chat-input"
-              placeholder="Ketik pesan…"
-              maxlength="200"
-              aria-label="Ketik pesan chat"
-              spellcheck="false"
-            />
-            <button type="submit" class="btn-chat-send">Kirim</button>
-          </form>
-        </section>
+          <!-- Chat panel (Fase 2b) — broadcast test -->
+          <section class="chat-section" aria-label="Chat room">
+            <h2 class="chat-heading">💬 Chat Room</h2>
+
+            <!-- message list -->
+            <ol id="chatList" class="chat-list" aria-live="polite" aria-label="Pesan chat"></ol>
+
+            <!-- send form -->
+            <form id="chatForm" class="chat-form" autocomplete="off" novalidate>
+              <input
+                type="text"
+                id="chatInput"
+                class="chat-input"
+                placeholder="Ketik pesan…"
+                maxlength="200"
+                aria-label="Ketik pesan chat"
+                spellcheck="false"
+              />
+              <button type="submit" class="btn-chat-send">Kirim</button>
+            </form>
+          </section>
+        </div>
 
       </div><!-- /#gameScreen -->
     </div><!-- /#app -->

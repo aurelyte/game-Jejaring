@@ -78,6 +78,9 @@ const _playerLeftListeners = [];
 /** @type {Array<(msg: {roomCode: string, players: any[], firstDrawerId: string, startedAt: any, from: string, ts: number, self: boolean}) => void>} */
 const _gameStartListeners = [];
 
+/** @type {Array<(msg: {scores: Record<string, number>, leaderboard: any[], lastAward?: any, from: string, ts: number, self: boolean}) => void>} */
+const _scoreUpdateListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
@@ -130,6 +133,9 @@ export function onPlayerLeft(fn) { _playerLeftListeners.push(fn); }
 /** @param {(msg: {roomCode: string, players: any[], firstDrawerId: string, startedAt: any, from: string, ts: number, self: boolean}) => void} fn */
 export function onGameStart(fn) { _gameStartListeners.push(fn); }
 
+/** @param {(msg: {scores: Record<string, number>, leaderboard: any[], lastAward?: any, from: string, ts: number, self: boolean}) => void} fn */
+export function onScoreUpdate(fn) { _scoreUpdateListeners.push(fn); }
+
 function _emitStatus(s)            { _statusListeners.forEach((fn) => fn(s)); }
 function _emitMembers(n, keys)     { _memberListeners.forEach((fn) => fn(n, keys)); }
 function _emitMemberPresence(m)    { _memberPresenceListeners.forEach((fn) => fn(m)); }
@@ -146,6 +152,7 @@ function _emitPowerupEnd(msg)      { _powerupEndListeners.forEach((fn) => fn(msg
 function _emitPlayerJoined(msg)    { _playerJoinedListeners.forEach((fn) => fn(msg)); }
 function _emitPlayerLeft(msg)      { _playerLeftListeners.forEach((fn) => fn(msg)); }
 function _emitGameStart(msg)       { _gameStartListeners.forEach((fn) => fn(msg)); }
+function _emitScoreUpdate(msg)     { _scoreUpdateListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
  * Helpers
@@ -400,17 +407,25 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
       });
     });
 
-    /* ---- Broadcast: guess-result from Host to all Clients (Fase 3b) ---- */
+    /* ---- Broadcast: guess-result from Host to all Clients (Fase 3b & 5a) ---- */
     _channel.on('broadcast', { event: 'guess-result' }, ({ payload }) => {
       if (!payload) return;
       _emitGuessResult({
-        isCorrect: payload.isCorrect,
-        guesserId: payload.guesserId,
-        guess:     payload.guess,
-        word:      payload.word,
-        from:      payload.from,
-        ts:        payload.ts,
-        self:      payload.from === getSelfKey(),
+        ...payload,
+        self: payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: score-update from Host to all Clients (Fase 5a) ---- */
+    _channel.on('broadcast', { event: 'score-update' }, ({ payload }) => {
+      if (!payload) return;
+      _emitScoreUpdate({
+        scores:      payload.scores,
+        leaderboard: payload.leaderboard,
+        lastAward:   payload.lastAward,
+        from:        payload.from,
+        ts:          payload.ts,
+        self:        payload.from === getSelfKey(),
       });
     });
 
@@ -808,6 +823,32 @@ export async function sendGameStart(payload) {
   await _channel.send({
     type:    'broadcast',
     event:   'game-start',
+    payload: fullPayload,
+  });
+}
+
+/**
+ * sendScoreUpdate - Host broadcasts updated scores & leaderboard (Fase 5a).
+ *
+ * @param {object} payload
+ * @param {Record<string, number>} payload.scores
+ * @param {any[]} payload.leaderboard
+ * @param {any} [payload.lastAward]
+ */
+export async function sendScoreUpdate(payload) {
+  if (!_channel) return;
+
+  const fullPayload = {
+    ...payload,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  _emitScoreUpdate({ ...fullPayload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'score-update',
     payload: fullPayload,
   });
 }

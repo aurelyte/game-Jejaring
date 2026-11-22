@@ -42,6 +42,7 @@ import {
   sendPlayerJoined,
   sendPlayerLeft,
   sendGameStart,
+  sendScoreUpdate,
   onStatusChange,
   onMemberChange,
   onMemberPresence,
@@ -58,6 +59,7 @@ import {
   onPlayerJoined,
   onPlayerLeft,
   onGameStart,
+  onScoreUpdate,
   getSelfKey,
   getPlayerName,
   setPlayerName,
@@ -153,6 +155,13 @@ const hostState = {
   freezeTimeout:      null,      // timer timeout host untuk durasi beku 5s
   freezeUntil:        0,         // timestamp berakhirnya efek beku
   freezeInitiator:    null,      // ID pemain yang membekukan tebakan lawan
+  scores:             {},        // [AUTHORITATIVE - HOST]: { [playerId]: number }
+};
+
+/* State skor lokal dan leaderboard yang tersinkronisasi dari Host (Fase 5a) */
+const leaderboardState = {
+  scores: {}, // { [playerId]: number }
+  list:   [], // Array<{ id, name, score, rank, is_drawer, is_host }>
 };
 
 /* ============================================================
@@ -169,6 +178,7 @@ const roomMembersEl    = /** @type {HTMLElement}       */ (document.getElementBy
 const connBadgeEl      = /** @type {HTMLElement}       */ (document.getElementById('connBadge'));
 const timerBadgeEl     = /** @type {HTMLElement}       */ (document.getElementById('timerBadge'));
 const roleBadge        = /** @type {HTMLElement}       */ (document.getElementById('roleBadge'));
+const myScoreBadge     = /** @type {HTMLElement}       */ (document.getElementById('myScoreBadge'));
 const btnLeaveRoom     = /** @type {HTMLButtonElement}  */ (document.getElementById('btnLeaveRoom'));
 const drawingIndicator = /** @type {HTMLElement}       */ (document.getElementById('drawingIndicator'));
 const canvasWrapper    = /** @type {HTMLElement}       */ (document.getElementById('canvasWrapper'));
@@ -225,6 +235,11 @@ const chatForm         = /** @type {HTMLFormElement}   */ (document.getElementBy
 const chatInput        = /** @type {HTMLInputElement}  */ (document.getElementById('chatInput'));
 const chatList         = /** @type {HTMLOListElement}  */ (document.getElementById('chatList'));
 
+/* Leaderboard (Fase 5a) */
+const leaderboardSection      = /** @type {HTMLElement}       */ (document.getElementById('leaderboardSection'));
+const leaderboardList         = /** @type {HTMLOListElement}  */ (document.getElementById('leaderboardList'));
+const leaderboardTotalPlayers = /** @type {HTMLElement}       */ (document.getElementById('leaderboardTotalPlayers'));
+
 /* Timer lokal client */
 let localTimerInterval = null;
 let nextRoundTimer     = null;
@@ -237,6 +252,7 @@ function showGame() {
   lobbyScreen.classList.add('hidden');
   waitingScreen.classList.add('hidden');
   gameScreen.classList.remove('hidden');
+  renderLeaderboard();
   requestAnimationFrame(() => {
     resize();
   });
@@ -293,6 +309,132 @@ function renderWaitingPlayerList(members) {
   });
 }
 
+/* ============================================================
+ * [AUTHORITATIVE - HOST] Skor & Perhitungan (Fase 5a)
+ * ============================================================ */
+
+/**
+ * calculateGuessScore - [HOST AUTHORITATIVE]
+ * Hitung perolehan poin: semakin cepat menebak (sisa detik lebih banyak),
+ * skor tebakan semakin tinggi (100 - 500 poin). Penggambar juga mendapatkan
+ * poin apresiasi 50% dari skor tebakan penebak (50 - 250 poin).
+ *
+ * @param {number} secondsRemaining
+ * @param {number} turnDuration
+ * @returns {{ guesserPoints: number, drawerPoints: number, speedBonus: number }}
+ */
+function calculateGuessScore(secondsRemaining, turnDuration = 60) {
+  const basePoints = 100;
+  const ratio = Math.max(0, Math.min(1, Number(secondsRemaining) / (turnDuration || 60)));
+  const speedBonus = Math.round(ratio * 400); // 0 sampai 400 poin bonus kecepatan
+  const guesserPoints = basePoints + speedBonus; // Rentang 100 s.d. 500 poin
+  const drawerPoints = Math.round(guesserPoints * 0.5); // Rentang 50 s.d. 250 poin
+
+  return { guesserPoints, drawerPoints, speedBonus };
+}
+
+/**
+ * buildLeaderboardList - Menyusun dan mengurutkan daftar pemain berdasarkan skor tertinggi.
+ *
+ * @param {Record<string, number>} [scoresMap]
+ * @returns {Array<{ id: string, name: string, score: number, rank: number, is_host: boolean, is_drawer: boolean }>}
+ */
+function buildLeaderboardList(scoresMap = {}) {
+  const members = getMemberDetails();
+  const allIds = new Set([
+    ...Object.keys(scoresMap || {}),
+    ...members.map((m) => m.id),
+    getSelfKey(),
+  ]);
+
+  const list = Array.from(allIds).map((id) => {
+    const mem = members.find((m) => m.id === id);
+    const name = mem ? mem.name : (id === getSelfKey() ? getPlayerName() : `Pemain ${id.slice(0, 4)}`);
+    const isHost = mem ? mem.is_host : (id === getSelfKey() ? state.isHost : false);
+    const isDrawer = (id === state.currentDrawerId);
+    const score = Number((scoresMap && scoresMap[id]) || (leaderboardState.scores && leaderboardState.scores[id]) || 0);
+
+    return {
+      id,
+      name,
+      score,
+      is_host: isHost,
+      is_drawer: isDrawer,
+    };
+  });
+
+  /* Urutkan skor tertinggi (descending); jika skor sama, urutkan nama */
+  list.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.name.localeCompare(b.name);
+  });
+
+  return list.map((item, idx) => ({
+    ...item,
+    rank: idx + 1,
+  }));
+}
+
+/**
+ * renderLeaderboard - Render UI Leaderboard real-time ke dalam DOM.
+ *
+ * @param {Array<any>} [leaderboardData]
+ */
+function renderLeaderboard(leaderboardData) {
+  if (!leaderboardList) return;
+
+  const data = (Array.isArray(leaderboardData) && leaderboardData.length > 0)
+    ? leaderboardData
+    : buildLeaderboardList(leaderboardState.scores);
+
+  leaderboardList.innerHTML = '';
+
+  if (leaderboardTotalPlayers) {
+    leaderboardTotalPlayers.textContent = `👥 ${data.length} Pemain`;
+  }
+
+  /* Perbarui badge skor sendiri di room bar */
+  const myData = data.find((p) => p.id === getSelfKey());
+  if (myScoreBadge) {
+    myScoreBadge.textContent = `🏆 ${myData ? myData.score : 0} pts`;
+  }
+
+  data.forEach((player) => {
+    const li = document.createElement('li');
+    const isSelf = (player.id === getSelfKey());
+    const isDrawer = (player.id === state.currentDrawerId);
+
+    li.className = `leaderboard-item rank-${player.rank} ${isSelf ? 'is-self' : ''} ${isDrawer ? 'is-drawer' : ''}`;
+    li.dataset.playerId = player.id;
+
+    let rankDisplay = `#${player.rank}`;
+    if (player.rank === 1) rankDisplay = '🥇 1';
+    else if (player.rank === 2) rankDisplay = '🥈 2';
+    else if (player.rank === 3) rankDisplay = '🥉 3';
+
+    const initial = (player.name || 'P').trim().charAt(0).toUpperCase() || 'P';
+
+    li.innerHTML = `
+      <div class="leaderboard-rank">${rankDisplay}</div>
+      <div class="leaderboard-avatar" aria-hidden="true">${escapeHtml(initial)}</div>
+      <div class="leaderboard-player-info">
+        <div class="leaderboard-name-row">
+          <span class="leaderboard-name" title="${escapeHtml(player.name)}">${escapeHtml(player.name)}</span>
+          ${player.is_host ? '<span class="badge-host">👑 HOST</span>' : ''}
+          ${isSelf ? '<span class="badge-you">(Kamu)</span>' : ''}
+          ${isDrawer ? '<span class="badge-drawer">🎨 Drawer</span>' : ''}
+        </div>
+      </div>
+      <div class="leaderboard-score-box">
+        <span class="leaderboard-score-val">${player.score}</span>
+        <span class="leaderboard-score-unit">pts</span>
+      </div>
+    `;
+
+    leaderboardList.appendChild(li);
+  });
+}
+
 async function showLobby() {
   await leaveRoom();
 
@@ -314,11 +456,17 @@ async function showLobby() {
   hostState.usedTimeThisTurn = false;
   hostState.freezeUntil      = 0;
   hostState.freezeInitiator  = null;
+  hostState.scores           = {};
 
   powerupState.usedRevealThisTurn = false;
   powerupState.usedFreezeThisTurn = false;
   powerupState.usedTimeThisTurn   = false;
   powerupState.isFrozen           = false;
+
+  leaderboardState.scores = {};
+  leaderboardState.list   = [];
+  renderLeaderboard([]);
+  if (myScoreBadge) myScoreBadge.textContent = '🏆 0 pts';
 
   scoreState.correct      = 0;
   scoreState.wrong        = 0;
@@ -480,7 +628,7 @@ btnHostNextWord.addEventListener('click', () => {
 });
 
 /* ============================================================
- * [AUTHORITATIVE - HOST ONLY] Validasi Tebakan (Fase 3b)
+ * [AUTHORITATIVE - HOST ONLY] Validasi Tebakan & Hitung Skor (Fase 3b & 5a)
  * ============================================================ */
 
 onGuessAttempt(async ({ guess, from }) => {
@@ -496,16 +644,59 @@ onGuessAttempt(async ({ guess, from }) => {
   const cleanedAnswer = hostState.secretWord.trim().toLowerCase();
   const isCorrect     = (cleanedGuess === cleanedAnswer);
 
-  /* Siarkan hasil evaluasi ke seluruh client di room */
-  await sendGuessResult({
-    isCorrect,
-    guesserId: from,
-    guess,
-    word: isCorrect ? hostState.secretWord : null,
-  });
-
-  /* Jika tebakan benar, Host mengakhiri ronde dan menjadwalkan giliran baru */
   if (isCorrect) {
+    /* [FASE 5a]: Host hitung skor secara otoritatif */
+    const { guesserPoints, drawerPoints, speedBonus } = calculateGuessScore(
+      hostState.secondsRemaining,
+      hostState.turnDuration
+    );
+
+    /* Perbarui skor penebak */
+    hostState.scores[from] = (hostState.scores[from] || 0) + guesserPoints;
+
+    /* Perbarui skor penggambar (drawer) jika bukan orang yang sama */
+    const currentDrawerId = hostState.playerOrder[hostState.currentDrawerIndex];
+    if (currentDrawerId && currentDrawerId !== from) {
+      hostState.scores[currentDrawerId] = (hostState.scores[currentDrawerId] || 0) + drawerPoints;
+    }
+
+    /* Ambil nama pemain untuk metadata */
+    const members     = getMemberDetails();
+    const guesserMem  = members.find((m) => m.id === from);
+    const guesserName = guesserMem ? guesserMem.name : (from === getSelfKey() ? getPlayerName() : `Pemain ${from.slice(0, 4)}`);
+    const drawerMem   = members.find((m) => m.id === currentDrawerId);
+    const drawerName  = drawerMem ? drawerMem.name : (currentDrawerId === getSelfKey() ? getPlayerName() : `Pemain ${currentDrawerId ? currentDrawerId.slice(0, 4) : 'Host'}`);
+
+    /* Siarkan hasil evaluasi ke seluruh client di room */
+    await sendGuessResult({
+      isCorrect:        true,
+      guesserId:        from,
+      guess,
+      word:             hostState.secretWord,
+      pointsAwarded:    guesserPoints,
+      drawerPoints:     (currentDrawerId && currentDrawerId !== from) ? drawerPoints : 0,
+      drawerId:         currentDrawerId,
+      secondsRemaining: hostState.secondsRemaining,
+    });
+
+    /* Siarkan skor & leaderboard terkini ke seluruh client */
+    const updatedLeaderboard = buildLeaderboardList(hostState.scores);
+    await sendScoreUpdate({
+      scores:      hostState.scores,
+      leaderboard: updatedLeaderboard,
+      lastAward: {
+        guesserId:        from,
+        guesserName,
+        guesserPoints,
+        drawerId:         currentDrawerId,
+        drawerName,
+        drawerPoints:     (currentDrawerId && currentDrawerId !== from) ? drawerPoints : 0,
+        speedBonus,
+        secondsRemaining: hostState.secondsRemaining,
+      },
+    });
+
+    /* Akhiri ronde dan jadwalkan ronde berikutnya */
     hostState.isRoundEnding = true;
     clearInterval(hostState.timerInterval);
     clearTimeout(hostState.freezeTimeout);
@@ -518,6 +709,15 @@ onGuessAttempt(async ({ guess, from }) => {
         hostStartNextTurn();
       }
     }, 3500);
+  } else {
+    /* Tebakan salah */
+    await sendGuessResult({
+      isCorrect:     false,
+      guesserId:     from,
+      guess,
+      word:          null,
+      pointsAwarded: 0,
+    });
   }
 });
 
@@ -670,6 +870,9 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
     showFeedback(`🎨 Giliran ${drawerLabel} menggambar!`, 'correct', 2500);
   }
 
+  /* Perbarui badge drawer di papan skor */
+  renderLeaderboard();
+
   /* Tombol ganti giliran manual hanya tampil pada Host */
   if (state.isHost) {
     btnHostNextWord.classList.remove('hidden');
@@ -679,10 +882,10 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
 });
 
 /* ============================================================
- * [CLIENT - RENDER ONLY] Update UI Berdasarkan 'guess-result'
+ * [CLIENT - RENDER ONLY] Update UI Berdasarkan 'guess-result' & Skor (Fase 3b & 5a)
  * ============================================================ */
 
-onGuessResult(({ isCorrect, guesserId, guess, word }) => {
+onGuessResult(({ isCorrect, guesserId, guess, word, pointsAwarded, drawerPoints, drawerId, secondsRemaining }) => {
   const isMyGuess   = (guesserId === getSelfKey());
   const guesserName = isMyGuess ? 'Kamu' : `Peer ${guesserId.slice(0, 4)}`;
 
@@ -700,25 +903,35 @@ onGuessResult(({ isCorrect, guesserId, guess, word }) => {
   }
 
   if (isCorrect) {
-    /* Update skor */
+    /* Update statistik ronde */
     scoreState.correct += 1;
     scoreCorrectEl.textContent = String(scoreState.correct);
+
+    const ptsInfo   = pointsAwarded ? ` (+${pointsAwarded} pts)` : '';
+    const speedInfo = (typeof secondsRemaining === 'number') ? ` [${secondsRemaining}s sisa]` : '';
 
     /* Buka kata rahasia di layar semua pemain */
     wordLabelEl.textContent = 'Kata tertebak:';
     wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(word)}</span>`;
-    wordHintEl.textContent  = `(Ditebak oleh ${guesserName}! Giliran berikutnya segera dimulai...)`;
+    wordHintEl.textContent  = `(Ditebak oleh ${guesserName}${ptsInfo}! Giliran berikutnya segera dimulai...)`;
 
-    /* Feedback */
+    /* Feedback visual */
     if (isMyGuess) {
-      showFeedback(`🎉 BENAR! Kamu berhasil menebak: "${word}"`, 'correct', 3000);
+      showFeedback(`🎉 BENAR${ptsInfo}! Tebakanmu tepat: "${word}"${speedInfo}`, 'correct', 3200);
     } else {
-      showFeedback(`🎉 ${guesserName} berhasil menebak: "${word}"!`, 'correct', 3000);
+      showFeedback(`🎉 ${guesserName}${ptsInfo} berhasil menebak: "${word}"!`, 'correct', 3200);
     }
 
     /* Notifikasi chat */
+    let chatText = `🏆 [TEBAKAN BENAR] ${guesserName}${ptsInfo} berhasil menebak: "${word}"!`;
+    if (drawerPoints && drawerId) {
+      const isDrawerMe = (drawerId === getSelfKey());
+      const dLabel = isDrawerMe ? 'Kamu (Drawer)' : `Drawer`;
+      chatText += ` · ${dLabel} +${drawerPoints} pts!`;
+    }
+
     appendChatMessage({
-      text: `🏆 [TEBAKAN BENAR] ${guesserName} berhasil menebak: "${word}"!`,
+      text: chatText,
       from: 'system',
       ts:   Date.now(),
       self: isMyGuess,
@@ -753,6 +966,38 @@ onGuessResult(({ isCorrect, guesserId, guess, word }) => {
       ts:   Date.now(),
       self: isMyGuess,
     });
+  }
+});
+
+/* ============================================================
+ * [CLIENT - RENDER ONLY] Leaderboard & Skor Update (Fase 5a)
+ * ============================================================ */
+
+onScoreUpdate(({ scores, leaderboard, lastAward }) => {
+  leaderboardState.scores = scores || {};
+  leaderboardState.list   = leaderboard || [];
+
+  renderLeaderboard(leaderboard);
+
+  if (lastAward && leaderboardList) {
+    /* Animasi visual (score-bump) pada item pemain yang mendapat skor baru */
+    if (lastAward.guesserId) {
+      const guesserEl = leaderboardList.querySelector(`[data-player-id="${lastAward.guesserId}"]`);
+      if (guesserEl) {
+        guesserEl.classList.remove('score-bump');
+        void guesserEl.offsetWidth;
+        guesserEl.classList.add('score-bump');
+      }
+    }
+
+    if (lastAward.drawerId) {
+      const drawerEl = leaderboardList.querySelector(`[data-player-id="${lastAward.drawerId}"]`);
+      if (drawerEl) {
+        drawerEl.classList.remove('score-bump');
+        void drawerEl.offsetWidth;
+        drawerEl.classList.add('score-bump');
+      }
+    }
   }
 });
 
@@ -954,6 +1199,9 @@ onMemberChange((count, members) => {
 
 onMemberPresence((members) => {
   renderWaitingPlayerList(members);
+  if (gameScreen && !gameScreen.classList.contains('hidden')) {
+    renderLeaderboard();
+  }
 });
 
 onPlayerJoined(({ player, from, self }) => {
@@ -989,6 +1237,15 @@ onGameStart(({ roomCode, players, firstDrawerId, startedAt }) => {
   state.isDrawer        = isMeDrawer;
 
   if (state.isHost) {
+    /* Inisialisasi skor awal seluruh pemain menjadi 0 pada Host */
+    hostState.scores = {};
+    if (Array.isArray(players)) {
+      players.forEach((p) => {
+        const pid = p.player_id || p.id;
+        if (pid) hostState.scores[pid] = 0;
+      });
+    }
+
     /* Siapkan urutan pemain untuk round-robin berikutnya */
     let playerIds = [];
     if (Array.isArray(players) && players.length > 0) {
@@ -1010,12 +1267,21 @@ onGameStart(({ roomCode, players, firstDrawerId, startedAt }) => {
       hostState.currentDrawerIndex = 0;
     }
 
+    /* Siarkan papan skor awal ke seluruh client */
+    const initialLeaderboard = buildLeaderboardList(hostState.scores);
+    sendScoreUpdate({
+      scores:      hostState.scores,
+      leaderboard: initialLeaderboard,
+      lastAward:   null,
+    }).catch(console.error);
+
     /* Host memulai ronde pertama dengan drawer yang terpilih secara acak */
     hostStartTurnForDrawer(firstDrawerId);
   } else {
     /* Penebak menunggu event 'turn-change' dari Host */
     renderGuesserWordSlots(null);
     canvasWrapper.classList.add('is-guesser');
+    renderLeaderboard();
   }
 });
 
