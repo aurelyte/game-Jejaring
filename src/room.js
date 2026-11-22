@@ -1,9 +1,10 @@
 /**
- * src/room.js — Room lifecycle + broadcast (chat & canvas stroke)
+ * src/room.js — Room lifecycle + broadcast (chat, stroke, host-authoritative new-word)
  *
  * Fase 2a: Supabase Realtime Presence channel per room.
  * Fase 2b: broadcast 'chat' events.
  * Fase 2c: broadcast 'stroke' and 'clear' events real-time.
+ * Fase 3a: broadcast 'new-word' (Host-authoritative: hanya hint/slot tersensor).
  *
  * Public API:
  *   joinRoom(roomCode)         → Promise<channel>; resolves on SUBSCRIBED
@@ -11,11 +12,13 @@
  *   sendChat(text)             → broadcast {type:'chat', text, from, ts}
  *   sendStroke(data)           → broadcast {type:'stroke', data, from, ts}
  *   sendClear()                → broadcast {type:'clear', from, ts}
+ *   sendNewWord(hint)          → broadcast {type:'new-word', hint, from, ts}
  *   onStatusChange(fn)         → 'connecting'|'connected'|'disconnected'|'error'
  *   onMemberChange(fn)         → number of presence keys in room
  *   onChatMessage(fn)          → {text, from, ts, self} on every chat event
  *   onStroke(fn)               → {stroke, from, self} on stroke broadcast
  *   onClear(fn)                → {from, self} on clear broadcast
+ *   onNewWord(fn)              → {hint, from, self} on new-word broadcast
  *   currentRoom()              → room code | null
  *   generateRoomCode()         → random 6-char code
  *   getSelfKey()               → string short id
@@ -48,6 +51,9 @@ const _strokeListeners = [];
 /** @type {Array<(msg: {from: string, ts: number, self: boolean}) => void>} */
 const _clearListeners = [];
 
+/** @type {Array<(msg: {hint: any, from: string, ts: number, self: boolean}) => void>} */
+const _newWordListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
@@ -67,11 +73,15 @@ export function onStroke(fn) { _strokeListeners.push(fn); }
 /** @param {(msg: {from: string, ts: number, self: boolean}) => void} fn */
 export function onClear(fn) { _clearListeners.push(fn); }
 
-function _emitStatus(s)  { _statusListeners.forEach((fn) => fn(s)); }
-function _emitMembers(n) { _memberListeners.forEach((fn) => fn(n)); }
-function _emitChat(msg)  { _chatListeners.forEach((fn) => fn(msg)); }
-function _emitStroke(msg){ _strokeListeners.forEach((fn) => fn(msg)); }
-function _emitClear(msg) { _clearListeners.forEach((fn) => fn(msg)); }
+/** @param {(msg: {hint: any, from: string, ts: number, self: boolean}) => void} fn */
+export function onNewWord(fn) { _newWordListeners.push(fn); }
+
+function _emitStatus(s)   { _statusListeners.forEach((fn) => fn(s)); }
+function _emitMembers(n)  { _memberListeners.forEach((fn) => fn(n)); }
+function _emitChat(msg)   { _chatListeners.forEach((fn) => fn(msg)); }
+function _emitStroke(msg) { _strokeListeners.forEach((fn) => fn(msg)); }
+function _emitClear(msg)  { _clearListeners.forEach((fn) => fn(msg)); }
+function _emitNewWord(msg){ _newWordListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
  * Helpers
@@ -184,6 +194,17 @@ export function joinRoom(roomCode) {
       });
     });
 
+    /* ---- Broadcast: new-word hint from Host (Fase 3a) ---- */
+    _channel.on('broadcast', { event: 'new-word' }, ({ payload }) => {
+      if (!payload) return;
+      _emitNewWord({
+        hint: payload.hint,
+        from: payload.from,
+        ts:   payload.ts,
+        self: payload.from === getSelfKey(),
+      });
+    });
+
     /* ---- Subscribe → resolve/reject the Promise ---- */
     _channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
@@ -263,11 +284,6 @@ export async function sendChat(text) {
  * sendStroke - Send batched stroke points to peers in the room.
  *
  * @param {object} strokeData
- * @param {Array<{x: number, y: number}>} strokeData.points
- * @param {string} strokeData.color
- * @param {number} strokeData.size
- * @param {boolean} strokeData.isStart
- * @param {boolean} strokeData.isEnd
  */
 export async function sendStroke(strokeData) {
   if (!_channel) return;
@@ -294,6 +310,32 @@ export async function sendClear() {
     type:    'broadcast',
     event:   'clear',
     payload: {
+      from: getSelfKey(),
+      ts:   Date.now(),
+    },
+  });
+}
+
+/* ============================================================
+ * Broadcast: New Word Hint (Fase 3a - Host Authoritative)
+ * ============================================================ */
+
+/**
+ * sendNewWord - Host broadcasts the masked word hint to all guessers.
+ * Catatan: Kata asli TIDAK disiarkan, hanya pola dan jumlah huruf.
+ *
+ * @param {object} hint
+ * @param {number} hint.length
+ * @param {string[]} hint.slots
+ */
+export async function sendNewWord(hint) {
+  if (!_channel) return;
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'new-word',
+    payload: {
+      hint,
       from: getSelfKey(),
       ts:   Date.now(),
     },

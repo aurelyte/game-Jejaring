@@ -59,7 +59,7 @@
            ===================================================== -->
       <div id="gameScreen" class="game-screen hidden">
 
-        <!-- status bar: room code + koneksi + jumlah pemain + role toggle -->
+        <!-- status bar: room code + koneksi + jumlah pemain + status peran host/guesser -->
         <div class="room-bar" id="roomBar">
           <span class="room-info">
             Room: <strong id="roomCodeDisplay">—</strong>
@@ -70,10 +70,10 @@
           <span class="conn-badge" id="connBadge" data-status="disconnected">
             ⬤ Menghubungkan…
           </span>
-          <!-- role toggle: penggambar vs penonton -->
-          <button id="btnRoleToggle" class="btn-role" title="Klik untuk beralih mode menggambar/menonton">
-            🎨 Peran: Penggambar
-          </button>
+          <!-- role badge: Host (Penggambar) vs Penebak -->
+          <span id="roleBadge" class="role-badge role-badge--host">
+            👑 Host
+          </span>
           <button id="btnLeaveRoom" class="btn-leave" title="Keluar dari room">
             Keluar ✕
           </button>
@@ -131,14 +131,23 @@
              =================================================== -->
         <section class="guess-section" aria-label="Area tebakan">
 
-          <!-- status kata: hint karakter + kata tersembunyi -->
+          <!-- status kata: hint karakter + kata tersembunyi / kata host -->
           <div class="word-display" aria-live="polite" aria-label="Kata yang harus ditebak">
-            <span class="word-label">Tebak kata:</span>
+            <span class="word-label" id="wordLabel">Tebak kata:</span>
             <div id="wordSlots" class="word-slots" aria-hidden="true"></div>
             <span class="word-hint" id="wordHint"></span>
+            <!-- tombol ganti kata untuk Host -->
+            <button id="btnHostNextWord" class="btn-host-action hidden" title="Pilih kata soal baru">
+              🎲 Kata Baru
+            </button>
           </div>
 
-          <!-- form tebak -->
+          <!-- info khusus Host (penggambar) -->
+          <p id="hostGuessNotice" class="host-notice hidden">
+            🎨 Anda sedang menggambar kata rahasia. Biarkan pemain lain menebaknya!
+          </p>
+
+          <!-- form tebak (aktif untuk non-host/penebak) -->
           <form class="guess-form" id="guessForm" autocomplete="off" novalidate>
             <input
               type="text"

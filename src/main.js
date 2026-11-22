@@ -6,7 +6,19 @@
  * Fase 2a: Supabase Realtime room — lobby, join/create, status koneksi.
  * Fase 2b: broadcast 'chat' — uji dua-arah sebelum stroke gambar.
  * Fase 2c: broadcast stroke real-time dengan batching ~60ms.
- * Native Canvas API, tanpa library eksternal.
+ * Fase 3a: Host-authoritative word generation + kata soal tersensor.
+ *
+ * Catatan Arsitektur (Host vs Client):
+ *   [AUTHORITATIVE - HOST ONLY]:
+ *     - Memilih kata rahasia dari WORD_LIST.
+ *     - Menyimpan kata asli (plain text) hanya di memori lokal Host.
+ *     - Membuat versi tersensor (jumlah huruf dan slot underscore).
+ *     - Menyiarkan event 'new-word' berisi hint ke room (kata asli TIDAK dikirim).
+ *     - Memiliki hak akses penuh untuk menggambar (Drawer) & tombol "Kata Baru".
+ *   [CLIENT - RENDER ONLY]:
+ *     - Menerima event 'new-word' yang berisi hint tersensor.
+ *     - Merender slot kosong/underscore tanpa mengetahui kata aslinya.
+ *     - Berperan sebagai Penebak (Guesser): canvas view-only, toolbar disembunyikan.
  */
 
 import {
@@ -16,63 +28,271 @@ import {
   sendChat,
   sendStroke,
   sendClear,
+  sendNewWord,
   onStatusChange,
   onMemberChange,
   onChatMessage,
   onStroke,
   onClear,
+  onNewWord,
 } from './room.js';
 
 /* ============================================================
- * Screen switching
+ * State Aplikasi
  * ============================================================ */
 
-const lobbyScreen = /** @type {HTMLElement} */ (document.getElementById('lobbyScreen'));
-const gameScreen  = /** @type {HTMLElement} */ (document.getElementById('gameScreen'));
-
 /**
- * showGame - Hide lobby, reveal game screen, then initialise canvas.
+ * @type {{
+ *   isHost: boolean,
+ *   isDrawer: boolean,
+ *   color: string,
+ *   size: number,
+ *   drawing: boolean,
+ *   lastX: number,
+ *   lastY: number
+ * }}
  */
+const state = {
+  isHost:   false, // [AUTHORITATIVE]: true jika membuat room, false jika join
+  isDrawer: false, // true jika saat ini punya izin menggambar di canvas
+  color:    '#f1f5f9',
+  size:     12,
+  drawing:  false,
+  lastX:    0,
+  lastY:    0,
+};
+
+/* stroke batching buffer (Fase 2c) */
+let currentBatchPoints = [];
+let batchIntervalId    = null;
+let isBatchStart       = false;
+
+/* ============================================================
+ * [AUTHORITATIVE - HOST ONLY] Word Pool & Host State
+ * ============================================================
+ * Daftar kata dan kata rahasia yang aktif hanya disimpan dan dikelola
+ * oleh Host. Penebak tidak memiliki akses ke plain text kata rahasia.
+ */
+
+const WORD_LIST = [
+  'kucing', 'anjing', 'rumah', 'pohon', 'mobil',
+  'sepeda', 'matahari', 'bulan', 'bintang', 'awan',
+  'hujan', 'gunung', 'laut', 'pantai', 'kapal',
+  'pesawat', 'buku', 'pensil', 'payung', 'topi',
+  'bunga', 'apel', 'pisang', 'jeruk', 'nasi',
+  'pizza', 'roti', 'kunci', 'jam', 'telepon',
+];
+
+/** State yang HANYA diketahui dan dikelola oleh Host */
+const hostState = {
+  secretWord: '',
+};
+
+/* ============================================================
+ * DOM refs
+ * ============================================================ */
+
+const lobbyScreen      = /** @type {HTMLElement}       */ (document.getElementById('lobbyScreen'));
+const gameScreen       = /** @type {HTMLElement}       */ (document.getElementById('gameScreen'));
+
+/* Room bar & Role indicators */
+const roomCodeDisplay  = /** @type {HTMLElement}       */ (document.getElementById('roomCodeDisplay'));
+const roomMembersEl    = /** @type {HTMLElement}       */ (document.getElementById('roomMembers'));
+const connBadgeEl      = /** @type {HTMLElement}       */ (document.getElementById('connBadge'));
+const roleBadge        = /** @type {HTMLElement}       */ (document.getElementById('roleBadge'));
+const btnLeaveRoom     = /** @type {HTMLButtonElement}  */ (document.getElementById('btnLeaveRoom'));
+const drawingIndicator = /** @type {HTMLElement}       */ (document.getElementById('drawingIndicator'));
+const canvasWrapper    = /** @type {HTMLElement}       */ (document.getElementById('canvasWrapper'));
+
+/* Lobby inputs */
+const btnCreateRoom    = /** @type {HTMLButtonElement}  */ (document.getElementById('btnCreateRoom'));
+const btnJoinRoom      = /** @type {HTMLButtonElement}  */ (document.getElementById('btnJoinRoom'));
+const joinForm         = /** @type {HTMLFormElement}    */ (document.getElementById('joinForm'));
+const joinCodeInput    = /** @type {HTMLInputElement}   */ (document.getElementById('joinCodeInput'));
+const joinErrorEl      = /** @type {HTMLParagraphElement}*/ (document.getElementById('joinError'));
+
+/* Canvas & Toolbar */
+const canvas           = /** @type {HTMLCanvasElement}  */ (document.getElementById('drawCanvas'));
+const ctx              = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+const brushCursor      = /** @type {HTMLElement}       */ (document.getElementById('brushCursor'));
+const colorPicker      = /** @type {HTMLInputElement}   */ (document.getElementById('colorPicker'));
+const clearBtn         = document.getElementById('clearBtn');
+
+/* Word display & Guess box */
+const wordLabelEl      = /** @type {HTMLElement}       */ (document.getElementById('wordLabel'));
+const wordSlotsEl      = /** @type {HTMLDivElement}    */ (document.getElementById('wordSlots'));
+const wordHintEl       = /** @type {HTMLSpanElement}   */ (document.getElementById('wordHint'));
+const btnHostNextWord  = /** @type {HTMLButtonElement}  */ (document.getElementById('btnHostNextWord'));
+const hostGuessNotice  = /** @type {HTMLElement}       */ (document.getElementById('hostGuessNotice'));
+const guessForm        = /** @type {HTMLFormElement}   */ (document.getElementById('guessForm'));
+const guessInput       = /** @type {HTMLInputElement}  */ (document.getElementById('guessInput'));
+const feedbackEl       = /** @type {HTMLParagraphElement} */ (document.getElementById('feedback'));
+const scoreCorrectEl   = /** @type {HTMLElement}       */ (document.getElementById('scoreCorrect'));
+const scoreWrongEl     = /** @type {HTMLElement}       */ (document.getElementById('scoreWrong'));
+
+/* Chat */
+const chatForm         = /** @type {HTMLFormElement}   */ (document.getElementById('chatForm'));
+const chatInput        = /** @type {HTMLInputElement}  */ (document.getElementById('chatInput'));
+const chatList         = /** @type {HTMLOListElement}  */ (document.getElementById('chatList'));
+
+/* ============================================================
+ * Screen Switching
+ * ============================================================ */
+
 function showGame() {
   lobbyScreen.classList.add('hidden');
   gameScreen.classList.remove('hidden');
-  /* ensure DOM layout has rendered before sizing canvas */
   requestAnimationFrame(() => {
     resize();
   });
 }
 
-/** showLobby - Return to lobby, leave the current room. */
 async function showLobby() {
   await leaveRoom();
+  state.isHost           = false;
+  state.isDrawer         = false;
+  hostState.secretWord   = '';
   gameScreen.classList.add('hidden');
   lobbyScreen.classList.remove('hidden');
-  joinCodeInput.value = '';
+  joinCodeInput.value    = '';
   joinErrorEl.textContent = '';
 }
 
 /* ============================================================
- * Room bar & Role DOM refs
+ * [AUTHORITATIVE - HOST] Pemilihan Kata & Penyiaran Soal
+ * ============================================================
+ * Hanya dijalankan oleh Host:
+ * 1. Memilih kata rahasia secara acak.
+ * 2. Mengirimkan HANYA versi tersensor (underscore/slot & panjang) ke room.
+ * 3. Menampilkan kata asli di layar Host sendiri.
  * ============================================================ */
-const roomCodeDisplay   = /** @type {HTMLElement}      */ (document.getElementById('roomCodeDisplay'));
-const roomMembersEl     = /** @type {HTMLElement}      */ (document.getElementById('roomMembers'));
-const connBadgeEl       = /** @type {HTMLElement}      */ (document.getElementById('connBadge'));
-const btnLeaveRoom      = /** @type {HTMLButtonElement} */ (document.getElementById('btnLeaveRoom'));
-const btnRoleToggle     = /** @type {HTMLButtonElement} */ (document.getElementById('btnRoleToggle'));
-const drawingIndicator  = /** @type {HTMLElement}       */ (document.getElementById('drawingIndicator'));
-const canvasWrapper     = /** @type {HTMLElement}       */ (document.getElementById('canvasWrapper'));
+
+function pickWord() {
+  if (WORD_LIST.length === 1) return WORD_LIST[0];
+  let candidate;
+  do {
+    candidate = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
+  } while (candidate === hostState.secretWord);
+  return candidate;
+}
+
+/**
+ * hostPickAndBroadcastWord - [HOST AUTHORITATIVE]
+ * Generate kata soal baru dan broadcast hint tersensor ke room.
+ */
+function hostPickAndBroadcastWord() {
+  if (!state.isHost) return;
+
+  const word = pickWord();
+  hostState.secretWord = word;
+
+  /* Bersihkan canvas host dan siarkan clear ke peer */
+  clearCanvas();
+  sendClear();
+
+  /* Siapkan hint tersensor (kata asli TIDAK dikirim) */
+  const cleanLen    = word.replace(/ /g, '').length;
+  const maskedSlots = Array.from(word).map((ch) => (ch === ' ' ? ' ' : '_'));
+
+  const hintPayload = {
+    length: cleanLen,
+    slots:  maskedSlots,
+  };
+
+  /* Siarkan hint tersensor ke room */
+  sendNewWord(hintPayload);
+
+  /* Render kata asli di layar Host */
+  renderHostWordDisplay(word);
+}
+
+/** Render kata asli di layar Host */
+function renderHostWordDisplay(word) {
+  wordLabelEl.textContent = 'Kata Anda:';
+  wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(word)}</span>`;
+  wordHintEl.textContent  = '(Hanya Anda yang tahu — gambarlah kata ini!)';
+}
+
+/* Tombol ganti kata untuk Host */
+btnHostNextWord.addEventListener('click', () => {
+  if (state.isHost) {
+    hostPickAndBroadcastWord();
+  }
+});
 
 /* ============================================================
- * Lobby DOM refs
+ * [CLIENT - RENDER ONLY] Penerima Soal Tersensor
+ * ============================================================
+ * Dijalankan oleh client Penebak saat menerima event 'new-word':
+ * Penebak hanya menerima hint.slots (underscore) dan hint.length.
  * ============================================================ */
-const btnCreateRoom  = /** @type {HTMLButtonElement} */ (document.getElementById('btnCreateRoom'));
-const btnJoinRoom    = /** @type {HTMLButtonElement} */ (document.getElementById('btnJoinRoom'));
-const joinForm       = /** @type {HTMLFormElement}   */ (document.getElementById('joinForm'));
-const joinCodeInput  = /** @type {HTMLInputElement}  */ (document.getElementById('joinCodeInput'));
-const joinErrorEl    = /** @type {HTMLParagraphElement} */ (document.getElementById('joinError'));
+
+function renderGuesserWordSlots(hint) {
+  wordLabelEl.textContent = 'Tebak kata:';
+  wordSlotsEl.innerHTML   = '';
+
+  if (!hint || !hint.slots) {
+    wordHintEl.textContent = '(Menunggu Host memilih kata...)';
+    return;
+  }
+
+  for (const ch of hint.slots) {
+    const slot = document.createElement('div');
+    slot.className = ch === ' ' ? 'letter-slot space-gap' : 'letter-slot';
+    wordSlotsEl.appendChild(slot);
+  }
+
+  wordHintEl.textContent = `(${hint.length} huruf)`;
+}
+
+/* Event listener 'new-word' dari Supabase Realtime */
+onNewWord(({ hint, self }) => {
+  if (self) return; /* Host sudah merender kata aslinya secara lokal */
+
+  /* Penebak me-render slot tersensor */
+  renderGuesserWordSlots(hint);
+  clearCanvas();
+  showFeedback('🎲 Host telah memilih kata baru! Perhatikan gambar dan tebak.', 'correct', 2500);
+});
 
 /* ============================================================
- * Connection status → room bar badge
+ * Role Management (Host vs Guesser)
+ * ============================================================ */
+
+function updateRoleUI() {
+  if (state.isHost) {
+    /* [AUTHORITATIVE - HOST]: Host adalah Penggambar */
+    state.isDrawer = true;
+
+    roleBadge.textContent = '👑 Host (Penggambar)';
+    roleBadge.className   = 'role-badge role-badge--host';
+
+    canvasWrapper.classList.remove('is-guesser');
+    btnHostNextWord.classList.remove('hidden');
+    hostGuessNotice.classList.remove('hidden');
+    guessForm.classList.add('hidden');
+
+    drawingIndicator.textContent = '🎨 Anda adalah Host & Penggambar. Gambar kata rahasia Anda di canvas!';
+    drawingIndicator.className   = 'drawing-indicator';
+  } else {
+    /* [CLIENT - GUESSER]: Non-host adalah Penebak / Penonton */
+    state.isDrawer = false;
+
+    roleBadge.textContent = '🔍 Penebak';
+    roleBadge.className   = 'role-badge role-badge--guesser';
+
+    canvasWrapper.classList.add('is-guesser');
+    btnHostNextWord.classList.add('hidden');
+    hostGuessNotice.classList.add('hidden');
+    guessForm.classList.remove('hidden');
+
+    drawingIndicator.textContent = '🔍 Anda adalah Penebak. Perhatikan gambar dari Host dan tebak di bawah!';
+    drawingIndicator.className   = 'drawing-indicator';
+  }
+}
+
+/* ============================================================
+ * Connection status & Presence listeners
  * ============================================================ */
 
 const CONN_LABEL = {
@@ -89,6 +309,18 @@ onStatusChange((status) => {
 
 onMemberChange((count) => {
   roomMembersEl.textContent = `👥 ${count} pemain`;
+
+  /* [AUTHORITATIVE - HOST]: Jika ada pemain baru masuk saat permainan
+     berlangsung, Host otomatis mengirim ulang hint tersensor agar pemain baru
+     langsung mendapatkan pola huruf terkini tanpa menunggu ronde berikutnya. */
+  if (state.isHost && hostState.secretWord) {
+    const cleanLen    = hostState.secretWord.replace(/ /g, '').length;
+    const maskedSlots = Array.from(hostState.secretWord).map((ch) => (ch === ' ' ? ' ' : '_'));
+    sendNewWord({
+      length: cleanLen,
+      slots:  maskedSlots,
+    });
+  }
 });
 
 /* ============================================================
@@ -96,11 +328,12 @@ onMemberChange((count) => {
  * ============================================================ */
 
 /**
- * enterRoom - Join a Supabase channel and transition to the game screen.
+ * enterRoom - Masuk room dan set otoritas Host/Non-Host.
  *
  * @param {string} code
+ * @param {boolean} isHost - true jika pembuat room, false jika join
  */
-async function enterRoom(code) {
+async function enterRoom(code, isHost = false) {
   const trimmed = code.trim().toUpperCase();
 
   if (!/^[A-Z0-9]{6}$/.test(trimmed)) {
@@ -112,27 +345,38 @@ async function enterRoom(code) {
   joinErrorEl.textContent = '';
   joinCodeInput.classList.remove('error');
 
-  btnCreateRoom.disabled = true;
+  btnCreateRoom.disabled    = true;
   btnCreateRoom.textContent = '✦ Menghubungkan…';
   if (btnJoinRoom) {
-    btnJoinRoom.disabled = true;
+    btnJoinRoom.disabled    = true;
     btnJoinRoom.textContent = '…';
   }
 
   try {
     await joinRoom(trimmed);
+
+    /* Set flag isHost di state lokal */
+    state.isHost = isHost;
     roomCodeDisplay.textContent = trimmed;
+
     showGame();
-    nextWord();
     updateRoleUI();
+
+    if (state.isHost) {
+      /* [AUTHORITATIVE - HOST]: Host langsung memilih kata pertama */
+      hostPickAndBroadcastWord();
+    } else {
+      /* [CLIENT - GUESSER]: Penebak menunggu hint dari Host */
+      renderGuesserWordSlots(null);
+    }
   } catch (err) {
     joinErrorEl.textContent = `Gagal terhubung: ${err.message}`;
     console.error('[enterRoom]', err);
   } finally {
-    btnCreateRoom.disabled = false;
+    btnCreateRoom.disabled    = false;
     btnCreateRoom.textContent = '✦ Buat Room';
     if (btnJoinRoom) {
-      btnJoinRoom.disabled = false;
+      btnJoinRoom.disabled    = false;
       btnJoinRoom.textContent = 'Masuk →';
     }
   }
@@ -142,17 +386,19 @@ async function enterRoom(code) {
  * Lobby events
  * ============================================================ */
 
+/* Pembuat room otomatis menjadi Host (isHost = true) */
 btnCreateRoom.addEventListener('click', () => {
   const code = generateRoomCode();
-  enterRoom(code);
+  enterRoom(code, true);
 });
 
+/* Pemain yang join bukan Host (isHost = false) */
 joinForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  enterRoom(joinCodeInput.value);
+  enterRoom(joinCodeInput.value, false);
 });
 
-/* force uppercase while typing */
+/* Force uppercase pada input kode */
 joinCodeInput.addEventListener('input', () => {
   const sel = joinCodeInput.selectionStart;
   joinCodeInput.value = joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -162,57 +408,6 @@ joinCodeInput.addEventListener('input', () => {
 btnLeaveRoom.addEventListener('click', showLobby);
 
 /* ============================================================
- * Role management (Fase 2c: Penggambar vs Penonton)
- * ============================================================ */
-
-function updateRoleUI() {
-  if (state.isDrawer) {
-    btnRoleToggle.classList.remove('is-spectator');
-    btnRoleToggle.textContent = '🎨 Peran: Penggambar';
-    canvasWrapper.classList.remove('is-spectator');
-    drawingIndicator.textContent = '🎨 Mode Penggambar: Anda bisa menggambar di canvas';
-  } else {
-    btnRoleToggle.classList.add('is-spectator');
-    btnRoleToggle.textContent = '👁️ Peran: Penonton';
-    canvasWrapper.classList.add('is-spectator');
-    drawingIndicator.textContent = '👁️ Mode Penonton: Hanya melihat (klik tombol peran di atas untuk menggambar)';
-  }
-}
-
-btnRoleToggle.addEventListener('click', () => {
-  state.isDrawer = !state.isDrawer;
-  updateRoleUI();
-});
-
-/* ============================================================
- * State
- * ============================================================ */
-
-/** @type {{ color: string, size: number, drawing: boolean, lastX: number, lastY: number, isDrawer: boolean }} */
-const state = {
-  color: '#f1f5f9',
-  size: 12,
-  drawing: false,
-  lastX: 0,
-  lastY: 0,
-  isDrawer: true, // semua orang bisa menggambar secara default untuk testing
-};
-
-/* stroke batching state (Fase 2c) */
-let currentBatchPoints = [];
-let batchIntervalId = null;
-let isBatchStart = false;
-
-/* ============================================================
- * DOM refs
- * ============================================================ */
-const canvas      = /** @type {HTMLCanvasElement} */ (document.getElementById('drawCanvas'));
-const ctx         = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-const brushCursor = /** @type {HTMLElement} */ (document.getElementById('brushCursor'));
-const colorPicker = /** @type {HTMLInputElement} */ (document.getElementById('colorPicker'));
-const clearBtn    = document.getElementById('clearBtn');
-
-/* ============================================================
  * Canvas sizing — maintain 16:9, fill wrapper width
  * ============================================================ */
 
@@ -220,22 +415,18 @@ function resize() {
   const w = canvas.offsetWidth;
   if (w === 0) return; /* jangan ubah ukuran jika wrapper masih tersembunyi */
 
-  /* snapshot current content */
-  const tmp = document.createElement('canvas');
+  const tmp  = document.createElement('canvas');
   tmp.width  = canvas.width;
   tmp.height = canvas.height;
   if (canvas.width > 0 && canvas.height > 0) {
     tmp.getContext('2d').drawImage(canvas, 0, 0);
   }
 
-  /* recalculate pixel size from CSS layout */
   const h = Math.round(w * (9 / 16));
-
-  canvas.width  = w;
-  canvas.height = h;
+  canvas.width        = w;
+  canvas.height       = h;
   canvas.style.height = `${h}px`;
 
-  /* restore content and reset context state */
   if (tmp.width > 0 && tmp.height > 0) {
     ctx.drawImage(tmp, 0, 0);
   }
@@ -264,8 +455,7 @@ function canvasPoint(e) {
 }
 
 /**
- * flushStrokeBatch - Send buffered stroke points to room peers.
- * Interval: ~60ms.
+ * flushStrokeBatch - Mengirim batch titik stroke tiap ~60ms.
  */
 function flushStrokeBatch() {
   if (currentBatchPoints.length > 1) {
@@ -277,28 +467,27 @@ function flushStrokeBatch() {
       isEnd:     false,
     });
     isBatchStart = false;
-    /* retain the last point as the start of the next segment */
     currentBatchPoints = [currentBatchPoints[currentBatchPoints.length - 1]];
   }
 }
 
 function startDraw(e) {
+  /* Hanya pemain dengan izin drawer (Host) yang bisa menggambar */
   if (!state.isDrawer) return;
+
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
 
   const { x, y } = canvasPoint(e);
-  state.drawing = true;
-  state.lastX   = x;
-  state.lastY   = y;
+  state.drawing  = true;
+  state.lastX    = x;
+  state.lastY    = y;
 
-  /* draw dot on local canvas */
   ctx.beginPath();
   ctx.arc(x, y, state.size / 2, 0, Math.PI * 2);
   ctx.fillStyle = state.color;
   ctx.fill();
 
-  /* initialize batch with normalized coordinates */
   const nx = x / canvas.width;
   const ny = y / canvas.height;
   currentBatchPoints = [{ x: nx, y: ny }];
@@ -324,7 +513,6 @@ function draw(e) {
   state.lastX = x;
   state.lastY = y;
 
-  /* append normalized point to batch */
   currentBatchPoints.push({
     x: x / canvas.width,
     y: y / canvas.height,
@@ -340,7 +528,6 @@ function stopDraw(e) {
   clearInterval(batchIntervalId);
   batchIntervalId = null;
 
-  /* flush remaining points and flag end of stroke */
   if (currentBatchPoints.length > 0) {
     sendStroke({
       points:    currentBatchPoints,
@@ -355,14 +542,14 @@ function stopDraw(e) {
 }
 
 /* ============================================================
- * Peer Stroke Rendering (Fase 2c)
+ * Peer Stroke Rendering (Client me-render stroke dari Host)
  * ============================================================ */
 
 let peerDrawingTimeout = null;
 
 function showPeerDrawing(from) {
   drawingIndicator.classList.add('is-peer-drawing');
-  drawingIndicator.textContent = `🎨 Peer ${from.slice(0, 4)} sedang menggambar...`;
+  drawingIndicator.textContent = `🎨 Host (${from.slice(0, 4)}) sedang menggambar...`;
 
   clearTimeout(peerDrawingTimeout);
   peerDrawingTimeout = setTimeout(() => {
@@ -382,7 +569,6 @@ function drawPeerStroke(strokeData) {
   ctx.lineJoin = 'round';
 
   if (points.length === 1 && isStart) {
-    /* single dot */
     const pt = points[0];
     ctx.beginPath();
     ctx.arc(pt.x * canvas.width, pt.y * canvas.height, strokeSize / 2, 0, Math.PI * 2);
@@ -404,7 +590,7 @@ function drawPeerStroke(strokeData) {
 }
 
 onStroke(({ stroke, from, self }) => {
-  if (self) return; /* ignore local echo */
+  if (self) return;
   showPeerDrawing(from);
   drawPeerStroke(stroke);
 });
@@ -412,12 +598,12 @@ onStroke(({ stroke, from, self }) => {
 onClear(({ from, self }) => {
   if (self) return;
   clearCanvas();
-  drawingIndicator.textContent = `🗑 Canvas dibersihkan oleh Peer ${from.slice(0, 4)}`;
+  drawingIndicator.textContent = `🗑 Canvas dibersihkan oleh ${from.slice(0, 4)}`;
   setTimeout(updateRoleUI, 2000);
 });
 
 /* ============================================================
- * Custom brush cursor
+ * Custom Brush Cursor
  * ============================================================ */
 
 function updateCursor(e) {
@@ -443,7 +629,7 @@ function hideCursor() {
 }
 
 /* ============================================================
- * Toolbar — color
+ * Toolbar Events
  * ============================================================ */
 
 function setColor(hex) {
@@ -462,10 +648,6 @@ document.querySelectorAll('.swatch[data-color]').forEach((btn) => {
 
 colorPicker.addEventListener('input', (e) => setColor(e.target.value));
 
-/* ============================================================
- * Toolbar — brush size
- * ============================================================ */
-
 function setSize(px) {
   state.size    = px;
   ctx.lineWidth = px;
@@ -479,10 +661,6 @@ document.querySelectorAll('.size-btn').forEach((btn) => {
   btn.addEventListener('click', () => setSize(Number(btn.dataset.size)));
 });
 
-/* ============================================================
- * Toolbar — clear
- * ============================================================ */
-
 function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
@@ -492,9 +670,7 @@ clearBtn.addEventListener('click', () => {
   sendClear();
 });
 
-/* ============================================================
- * Canvas event listeners
- * ============================================================ */
+/* Canvas event listeners */
 canvas.addEventListener('pointerdown',  startDraw,  { passive: false });
 canvas.addEventListener('pointermove',  draw,       { passive: false });
 canvas.addEventListener('pointerup',    stopDraw,   { passive: false });
@@ -505,79 +681,10 @@ canvas.addEventListener('pointerenter', showCursor,  { passive: true });
 canvas.addEventListener('pointerleave', hideCursor,  { passive: true });
 
 /* ============================================================
- * Init
+ * Guess Box Handling (Penebak)
  * ============================================================ */
-
-function init() {
-  resize();
-  applyCtxDefaults();
-  updateRoleUI();
-}
-
-window.addEventListener('resize', resize);
-init();
-
-/* ============================================================
- * Guess box — Fase 1c
- * ============================================================ */
-
-const WORD_LIST = [
-  'kucing', 'anjing', 'rumah', 'pohon', 'mobil',
-  'sepeda', 'matahari', 'bulan', 'bintang', 'awan',
-  'hujan', 'gunung', 'laut', 'pantai', 'kapal',
-  'pesawat', 'buku', 'pensil', 'payung', 'topi',
-  'bunga', 'apel', 'pisang', 'jeruk', 'nasi',
-  'pizza', 'roti', 'kunci', 'jam', 'telepon',
-];
-
-const guessState = {
-  word:         '',
-  scoreCorrect: 0,
-  scoreWrong:   0,
-};
-
-const guessForm      = /** @type {HTMLFormElement}   */ (document.getElementById('guessForm'));
-const guessInput     = /** @type {HTMLInputElement}  */ (document.getElementById('guessInput'));
-const feedbackEl     = /** @type {HTMLParagraphElement} */ (document.getElementById('feedback'));
-const wordSlotsEl    = /** @type {HTMLDivElement}    */ (document.getElementById('wordSlots'));
-const wordHintEl     = /** @type {HTMLSpanElement}   */ (document.getElementById('wordHint'));
-const scoreCorrectEl = /** @type {HTMLElement}      */ (document.getElementById('scoreCorrect'));
-const scoreWrongEl   = /** @type {HTMLElement}      */ (document.getElementById('scoreWrong'));
 
 let feedbackTimer = 0;
-
-function pickWord() {
-  if (WORD_LIST.length === 1) return WORD_LIST[0];
-  let candidate;
-  do {
-    candidate = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
-  } while (candidate === guessState.word);
-  return candidate;
-}
-
-function renderWordSlots() {
-  wordSlotsEl.innerHTML = '';
-  for (const ch of guessState.word) {
-    const slot = document.createElement('div');
-    if (ch === ' ') {
-      slot.className = 'letter-slot space-gap';
-    } else {
-      slot.className = 'letter-slot';
-      slot.dataset.char = ch;
-    }
-    wordSlotsEl.appendChild(slot);
-  }
-  const len = guessState.word.replace(/ /g, '').length;
-  wordHintEl.textContent = `(${len} huruf)`;
-}
-
-function nextWord() {
-  guessState.word = pickWord();
-  renderWordSlots();
-  clearCanvas();
-  guessInput.value = '';
-  guessInput.focus();
-}
 
 function showFeedback(text, kind, ms = 2200) {
   clearTimeout(feedbackTimer);
@@ -601,36 +708,27 @@ function triggerShake() {
   }, { once: true });
 }
 
-function handleGuess(e) {
+/* Saat penebak mengirim tebakan di form tebak */
+guessForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const raw   = guessInput.value;
-  const guess = raw.trim().toLowerCase();
-  if (!guess) return;
+  const raw = guessInput.value.trim();
+  if (!raw) return;
 
-  const answer = guessState.word.trim().toLowerCase();
-  if (guess === answer) {
-    guessState.scoreCorrect += 1;
-    scoreCorrectEl.textContent = String(guessState.scoreCorrect);
-    showFeedback('🎉 Benar! Lanjut gambar berikutnya…', 'correct', 1500);
-    setTimeout(nextWord, 1500);
-  } else {
-    guessState.scoreWrong += 1;
-    scoreWrongEl.textContent = String(guessState.scoreWrong);
-    showFeedback('❌ Coba lagi!', 'wrong', 1800);
+  guessInput.value = '';
+
+  /* Kirim tebakan ke chat room agar semua pemain (termasuk Host) melihatnya */
+  try {
+    await sendChat(`[Tebakan]: ${raw}`);
+    showFeedback(`Tebakan terkirim: "${raw}"`, 'correct', 1500);
+  } catch (err) {
+    showFeedback(`Gagal kirim: ${err.message}`, 'wrong', 1800);
     triggerShake();
-    guessInput.select();
   }
-}
-
-guessForm.addEventListener('submit', handleGuess);
+});
 
 /* ============================================================
- * Chat — Fase 2b
+ * Chat Handling (Fase 2b)
  * ============================================================ */
-
-const chatForm  = /** @type {HTMLFormElement}  */ (document.getElementById('chatForm'));
-const chatInput = /** @type {HTMLInputElement} */ (document.getElementById('chatInput'));
-const chatList  = /** @type {HTMLOListElement} */ (document.getElementById('chatList'));
 
 function appendChatMessage({ text, from, ts, self }) {
   const li = document.createElement('li');
@@ -678,3 +776,16 @@ chatForm.addEventListener('submit', async (e) => {
     });
   }
 });
+
+/* ============================================================
+ * Init
+ * ============================================================ */
+
+function init() {
+  resize();
+  applyCtxDefaults();
+  updateRoleUI();
+}
+
+window.addEventListener('resize', resize);
+init();

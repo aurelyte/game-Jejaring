@@ -566,30 +566,89 @@ h1 {
   color: #ef4444;
 }
 
-/* role toggle button (Fase 2c) */
-.btn-role {
-  padding: 0.35rem 0.85rem;
+/* role badge: Host vs Guesser (Fase 3a) */
+.role-badge {
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.role-badge--host {
+  background: #451a03;
+  color: #fef08a;
+  border: 1px solid #ca8a04;
+}
+
+.role-badge--guesser {
+  background: #064e3b;
+  color: #a7f3d0;
+  border: 1px solid #059669;
+}
+
+/* host word action button */
+.btn-host-action {
+  margin-left: auto;
+  padding: 0.35rem 0.75rem;
   border-radius: 8px;
-  border: 1px solid #0284c7;
-  background: #0369a1;
-  color: #f0f9ff;
+  border: 1px solid #ca8a04;
+  background: #854d0e;
+  color: #fef08a;
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s, border-color 0.15s;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
 }
 
-.btn-role:hover {
-  background: #0284c7;
+.btn-host-action:hover {
+  background: #a16207;
 }
 
-.btn-role.is-spectator {
-  background: #334155;
-  border-color: #475569;
+.btn-host-action:active {
+  transform: scale(0.96);
+}
+
+/* host secret word reveal */
+.secret-word-revealed {
+  color: #38bdf8;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-size: 1.15rem;
+  background: #0f172a;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #38bdf8;
+}
+
+/* host notice in guess section */
+.host-notice {
+  background: #0f172a;
+  border: 1px dashed #475569;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
   color: #94a3b8;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
-/* drawing indicator banner (Fase 2c) */
+/* guesser canvas state: toolbar hidden, canvas view-only */
+.canvas-wrapper.is-guesser .toolbar {
+  display: none;
+}
+
+.canvas-wrapper.is-guesser #drawCanvas {
+  cursor: default;
+  touch-action: auto;
+}
+
+.canvas-wrapper.is-guesser #brushCursor {
+  display: none !important;
+}
+
+/* drawing indicator banner (Fase 2c & 3a) */
 .drawing-indicator {
   background: #1e293b;
   border: 1px solid #334155;
