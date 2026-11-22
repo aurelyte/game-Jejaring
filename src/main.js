@@ -2,6 +2,7 @@
  * src/main.js — Tebak Gambar
  *
  * Fase 1b: canvas gambar lokal, 100% client-side.
+ * Fase 1c: guess box lokal — tebak kata hardcoded, belum multiplayer.
  * Native Canvas API, tanpa library eksternal.
  *
  * Fitur:
@@ -11,6 +12,8 @@
  *   - Tombol clear canvas
  *   - Custom brush cursor (ukuran & warna mengikuti pilihan)
  *   - Canvas auto-resize mengikuti lebar wrapper (16:9)
+ *   - Guess box: input tebakan, feedback benar/salah, skor lokal
+ *   - Kata dipilih random dari array; baru digenerate setelah benar
  */
 
 /* ============================================================
@@ -270,3 +273,190 @@ function init() {
 
 window.addEventListener('resize', resize);
 init();
+
+/* ============================================================
+ * Guess box — Fase 1c
+ * ============================================================ */
+
+/**
+ * WORD_LIST - Hardcoded pool of drawable nouns.
+ *
+ * All lowercase; matching is case-insensitive.
+ * Extend this array freely — no networking required.
+ *
+ * @type {string[]}
+ */
+const WORD_LIST = [
+  'kucing', 'anjing', 'rumah', 'pohon', 'mobil',
+  'sepeda', 'matahari', 'bulan', 'bintang', 'awan',
+  'hujan', 'gunung', 'laut', 'pantai', 'kapal',
+  'pesawat', 'buku', 'pensil', 'payung', 'topi',
+  'bunga', 'apel', 'pisang', 'jeruk', 'nasi',
+  'pizza', 'roti', 'kunci', 'jam', 'telepon',
+];
+
+/* ----- guess state ----- */
+/** @type {{ word: string, scoreCorrect: number, scoreWrong: number }} */
+const guessState = {
+  word:         '',
+  scoreCorrect: 0,
+  scoreWrong:   0,
+};
+
+/* ----- guess DOM refs ----- */
+const guessForm     = /** @type {HTMLFormElement}   */ (document.getElementById('guessForm'));
+const guessInput    = /** @type {HTMLInputElement}  */ (document.getElementById('guessInput'));
+const feedbackEl    = /** @type {HTMLParagraphElement} */ (document.getElementById('feedback'));
+const wordSlotsEl   = /** @type {HTMLDivElement}    */ (document.getElementById('wordSlots'));
+const wordHintEl    = /** @type {HTMLSpanElement}   */ (document.getElementById('wordHint'));
+const scoreCorrectEl = /** @type {HTMLElement}      */ (document.getElementById('scoreCorrect'));
+const scoreWrongEl   = /** @type {HTMLElement}      */ (document.getElementById('scoreWrong'));
+
+/* feedback auto-clear timer handle */
+let feedbackTimer = 0;
+
+/* ============================================================
+ * Word helpers
+ * ============================================================ */
+
+/**
+ * pickWord - Choose a random word from WORD_LIST.
+ *
+ * Avoids repeating the same word twice in a row when the pool
+ * is large enough.
+ *
+ * @returns {string}
+ */
+function pickWord() {
+  if (WORD_LIST.length === 1) return WORD_LIST[0];
+
+  let candidate;
+  do {
+    candidate = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
+  } while (candidate === guessState.word);
+
+  return candidate;
+}
+
+/**
+ * renderWordSlots - Render blank letter-slot divs for the current word.
+ *
+ * Each character gets its own slot; spaces get a narrow gap div.
+ * Slots are intentionally empty (underscores shown via CSS border-bottom).
+ */
+function renderWordSlots() {
+  wordSlotsEl.innerHTML = '';
+
+  for (const ch of guessState.word) {
+    const slot = document.createElement('div');
+
+    if (ch === ' ') {
+      slot.className = 'letter-slot space-gap';
+    } else {
+      slot.className = 'letter-slot';
+      /* data-char stored for future "reveal hint" feature */
+      slot.dataset.char = ch;
+    }
+
+    wordSlotsEl.appendChild(slot);
+  }
+
+  /* e.g. "(5 huruf)" */
+  const len = guessState.word.replace(/ /g, '').length;
+  wordHintEl.textContent = `(${len} huruf)`;
+}
+
+/**
+ * nextWord - Pick a new word, clear the canvas, reset the input.
+ */
+function nextWord() {
+  guessState.word = pickWord();
+  renderWordSlots();
+  clearCanvas();
+  guessInput.value = '';
+  guessInput.focus();
+}
+
+/* ============================================================
+ * Feedback helpers
+ * ============================================================ */
+
+/**
+ * showFeedback - Display a feedback message, then auto-clear it.
+ *
+ * @param {string}  text      — Message to display
+ * @param {'correct'|'wrong'} kind — Controls CSS class + colour
+ * @param {number}  [ms=2200] — Auto-clear delay in milliseconds
+ */
+function showFeedback(text, kind, ms = 2200) {
+  clearTimeout(feedbackTimer);
+
+  feedbackEl.textContent = text;
+  feedbackEl.className   = `feedback ${kind}`;
+
+  feedbackTimer = setTimeout(() => {
+    feedbackEl.classList.add('fade-out');
+    feedbackTimer = setTimeout(() => {
+      feedbackEl.textContent = '';
+      feedbackEl.className   = 'feedback';
+    }, 220);
+  }, ms);
+}
+
+/**
+ * triggerShake - Briefly animate the input on wrong answer.
+ */
+function triggerShake() {
+  guessInput.classList.remove('shake');
+  /* force reflow so re-adding the class restarts the animation */
+  void guessInput.offsetWidth;
+  guessInput.classList.add('shake');
+  guessInput.addEventListener('animationend', () => {
+    guessInput.classList.remove('shake');
+  }, { once: true });
+}
+
+/* ============================================================
+ * Submit handler
+ * ============================================================ */
+
+/**
+ * handleGuess - Evaluate the player's guess against the current word.
+ *
+ * Comparison is case-insensitive and trims leading/trailing whitespace.
+ * On correct guess: update score, show feedback, then pick next word.
+ * On wrong guess:   update score, show feedback, shake input.
+ *
+ * @param {Event} e
+ */
+function handleGuess(e) {
+  e.preventDefault();
+
+  const raw   = guessInput.value;
+  const guess = raw.trim().toLowerCase();
+
+  if (!guess) return;
+
+  const answer = guessState.word.trim().toLowerCase();
+
+  if (guess === answer) {
+    guessState.scoreCorrect += 1;
+    scoreCorrectEl.textContent = String(guessState.scoreCorrect);
+    showFeedback('🎉 Benar! Lanjut gambar berikutnya…', 'correct', 1500);
+    /* delay nextWord so player can read the feedback */
+    setTimeout(nextWord, 1500);
+  } else {
+    guessState.scoreWrong += 1;
+    scoreWrongEl.textContent = String(guessState.scoreWrong);
+    showFeedback('❌ Coba lagi!', 'wrong', 1800);
+    triggerShake();
+    guessInput.select();
+  }
+}
+
+guessForm.addEventListener('submit', handleGuess);
+
+/* ============================================================
+ * Bootstrap guess box
+ * ============================================================ */
+nextWord();

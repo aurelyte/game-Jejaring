@@ -51,6 +51,43 @@
         <!-- kursor kustom: ukuran kuas -->
         <div id="brushCursor" aria-hidden="true"></div>
       </div>
+
+      <!-- =====================================================
+           Guess box
+           ===================================================== -->
+      <section class="guess-section" aria-label="Area tebakan">
+
+        <!-- status kata: hint karakter + kata tersembunyi -->
+        <div class="word-display" aria-live="polite" aria-label="Kata yang harus ditebak">
+          <span class="word-label">Tebak kata:</span>
+          <div id="wordSlots" class="word-slots" aria-hidden="true"></div>
+          <span class="word-hint" id="wordHint"></span>
+        </div>
+
+        <!-- form tebak -->
+        <form class="guess-form" id="guessForm" autocomplete="off" novalidate>
+          <input
+            type="text"
+            id="guessInput"
+            class="guess-input"
+            placeholder="Ketik tebakanmu…"
+            aria-label="Input tebakan"
+            maxlength="40"
+            spellcheck="false"
+          />
+          <button type="submit" class="btn-submit">Tebak →</button>
+        </form>
+
+        <!-- feedback -->
+        <p class="feedback" id="feedback" aria-live="assertive" aria-atomic="true"></p>
+
+        <!-- skor sederhana -->
+        <p class="score-line">
+          Benar: <strong id="scoreCorrect">0</strong>
+          &nbsp;·&nbsp;
+          Coba lagi: <strong id="scoreWrong">0</strong>
+        </p>
+      </section>
     </div>
 
     <script type="module" src="/src/main.js"></script>
