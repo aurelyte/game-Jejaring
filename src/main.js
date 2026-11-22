@@ -97,7 +97,7 @@ const state = {
   isHost:          false, // [AUTHORITATIVE]: true jika membuat room, false jika join
   isDrawer:        false, // true jika saat ini adalah giliran menggambar di canvas
   currentDrawerId: '',
-  color:           '#f1f5f9',
+  color:           '#1e293b', // Default hitam tinta kontras pada kanvas putih
   size:            12,
   drawing:         false,
   lastX:           0,
@@ -1278,9 +1278,19 @@ onGameStart(({ roomCode, players, firstDrawerId, startedAt }) => {
     /* Host memulai ronde pertama dengan drawer yang terpilih secara acak */
     hostStartTurnForDrawer(firstDrawerId);
   } else {
-    /* Penebak menunggu event 'turn-change' dari Host */
-    renderGuesserWordSlots(null);
-    canvasWrapper.classList.add('is-guesser');
+    /* Non-host client: siapkan role sesuai undian firstDrawerId */
+    if (isMeDrawer) {
+      canvasWrapper.classList.remove('is-guesser');
+      drawingIndicator.textContent = '🎨 Giliran Anda Menggambar! Gambarlah di canvas.';
+      drawingIndicator.className   = 'drawing-indicator';
+      hostGuessNotice.classList.remove('hidden');
+      hostGuessNotice.textContent  = '🎨 Anda sedang menggambar! Biarkan pemain lain menebak.';
+      guessForm.classList.add('hidden');
+    } else {
+      canvasWrapper.classList.add('is-guesser');
+      hostGuessNotice.classList.add('hidden');
+      guessForm.classList.remove('hidden');
+    }
     renderLeaderboard();
   }
 });

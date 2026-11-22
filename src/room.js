@@ -342,6 +342,7 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
     /* ---- Broadcast: game-start (Waiting Room -> Game) ---- */
     _channel.on('broadcast', { event: 'game-start' }, ({ payload }) => {
       if (!payload) return;
+      if (payload.from === getSelfKey()) return; // Sender sudah memprosesnya secara lokal
       _emitGameStart({
         roomCode:      payload.roomCode,
         players:       payload.players,
@@ -349,7 +350,7 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
         startedAt:     payload.startedAt,
         from:          payload.from,
         ts:            payload.ts,
-        self:          payload.from === getSelfKey(),
+        self:          false,
       });
     });
 
@@ -419,19 +420,21 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
     /* ---- Broadcast: score-update from Host to all Clients (Fase 5a) ---- */
     _channel.on('broadcast', { event: 'score-update' }, ({ payload }) => {
       if (!payload) return;
+      if (payload.from === getSelfKey()) return; // Sender sudah memprosesnya secara lokal
       _emitScoreUpdate({
         scores:      payload.scores,
         leaderboard: payload.leaderboard,
         lastAward:   payload.lastAward,
         from:        payload.from,
         ts:          payload.ts,
-        self:        payload.from === getSelfKey(),
+        self:        false,
       });
     });
 
     /* ---- Broadcast: turn-change from Host to all Clients (Fase 3c) ---- */
     _channel.on('broadcast', { event: 'turn-change' }, ({ payload }) => {
       if (!payload) return;
+      if (payload.from === getSelfKey()) return; // Sender sudah memprosesnya secara lokal
       _emitTurnChange({
         drawerId:   payload.drawerId,
         drawerWord: payload.drawerWord,
@@ -440,7 +443,7 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
         startedAt:  payload.startedAt,
         from:       payload.from,
         ts:         payload.ts,
-        self:       payload.from === getSelfKey(),
+        self:       false,
       });
     });
 
@@ -818,13 +821,15 @@ export async function sendGameStart(payload) {
     ts:   Date.now(),
   };
 
-  _emitGameStart({ ...fullPayload, self: true });
-
+  /* Siarkan event game-start ke seluruh peer terlebih dahulu */
   await _channel.send({
     type:    'broadcast',
     event:   'game-start',
     payload: fullPayload,
   });
+
+  /* Host memproses transisi ke permainan secara lokal */
+  _emitGameStart({ ...fullPayload, self: true });
 }
 
 /**
