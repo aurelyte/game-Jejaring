@@ -43,6 +43,7 @@ import {
   sendPlayerLeft,
   sendGameStart,
   sendScoreUpdate,
+  sendGameOver,
   onStatusChange,
   onMemberChange,
   onMemberPresence,
@@ -60,6 +61,7 @@ import {
   onPlayerLeft,
   onGameStart,
   onScoreUpdate,
+  onGameOver,
   getSelfKey,
   getPlayerName,
   setPlayerName,
@@ -213,13 +215,19 @@ const clearBtn         = document.getElementById('clearBtn');
 const wordLabelEl      = /** @type {HTMLElement}       */ (document.getElementById('wordLabel'));
 const wordSlotsEl      = /** @type {HTMLDivElement}    */ (document.getElementById('wordSlots'));
 const wordHintEl       = /** @type {HTMLSpanElement}   */ (document.getElementById('wordHint'));
-const btnHostNextWord  = /** @type {HTMLButtonElement}  */ (document.getElementById('btnHostNextWord'));
+const btnHostNextWord  = /** @type {HTMLButtonElement|null} */ (document.getElementById('btnHostNextWord'));
 const hostGuessNotice  = /** @type {HTMLElement}       */ (document.getElementById('hostGuessNotice'));
 const guessForm        = /** @type {HTMLFormElement}   */ (document.getElementById('guessForm'));
 const guessInput       = /** @type {HTMLInputElement}  */ (document.getElementById('guessInput'));
 const feedbackEl       = /** @type {HTMLParagraphElement} */ (document.getElementById('feedback'));
 const scoreCorrectEl   = /** @type {HTMLElement}       */ (document.getElementById('scoreCorrect'));
 const scoreWrongEl     = /** @type {HTMLElement}       */ (document.getElementById('scoreWrong'));
+
+/* Modal Game Over / Scoreboard Akhir */
+const gameOverModal           = /** @type {HTMLElement|null} */ (document.getElementById('gameOverModal'));
+const gameOverNotice          = /** @type {HTMLElement|null} */ (document.getElementById('gameOverNotice'));
+const gameOverLeaderboardList = /** @type {HTMLOListElement|null} */ (document.getElementById('gameOverLeaderboardList'));
+const btnGameOverLeave        = /** @type {HTMLButtonElement|null} */ (document.getElementById('btnGameOverLeave'));
 
 /* Power-up elements (Fase 4b & 4c) */
 const powerupBar       = /** @type {HTMLElement}       */ (document.getElementById('powerupBar'));
@@ -435,7 +443,118 @@ function renderLeaderboard(leaderboardData) {
   });
 }
 
+/**
+ * handleGameOver - Selesaikan permainan dan tampilkan modal scoreboard akhir
+ *
+ * @param {object} params
+ * @param {string} [params.reason]
+ * @param {string} [params.message]
+ * @param {any[]} [params.leaderboard]
+ */
+function handleGameOver({ reason, message, leaderboard } = {}) {
+  /* 1. Hentikan seluruh countdown timer dan siklus ronde */
+  clearInterval(localTimerInterval);
+  clearInterval(hostState.timerInterval);
+  clearTimeout(nextRoundTimer);
+  clearTimeout(hostState.freezeTimeout);
+  clearInterval(localFreezeInterval);
+  unfreezeUI();
+
+  /* 2. Kunci kanvas gambar */
+  canvasWrapper.classList.add('is-guesser');
+  state.isDrawer = false;
+
+  /* 3. Catat di obrolan */
+  appendChatMessage({
+    text: `🛑 [GAME OVER] ${message || 'Permainan telah berakhir.'}`,
+    from: 'system',
+    ts:   Date.now(),
+    self: false,
+  });
+
+  /* 4. Tentukan data leaderboard akhir */
+  const currentScores = (state.isHost && hostState.scores) ? hostState.scores : leaderboardState.scores;
+  let finalBoard = (Array.isArray(leaderboard) && leaderboard.length > 0)
+    ? leaderboard
+    : (leaderboardState.list.length > 0 ? leaderboardState.list : buildLeaderboardList(currentScores));
+
+  if (!finalBoard || finalBoard.length === 0) {
+    finalBoard = buildLeaderboardList(currentScores);
+  }
+
+  /* Urutkan peringkat berdasarkan skor tertinggi */
+  const sortedBoard = [...finalBoard].sort((a, b) => (b.score || 0) - (a.score || 0));
+  sortedBoard.forEach((p, idx) => { p.rank = idx + 1; });
+
+  /* 5. Render modal scoreboard akhir */
+  renderGameOverModal(sortedBoard, message);
+}
+
+/**
+ * renderGameOverModal - Tampilkan modal scoreboard akhir ke pengguna
+ *
+ * @param {any[]} players
+ * @param {string} [noticeText]
+ */
+function renderGameOverModal(players, noticeText) {
+  if (!gameOverModal || !gameOverLeaderboardList) return;
+
+  if (gameOverNotice) {
+    gameOverNotice.textContent = noticeText || 'Host telah meninggalkan room. Permainan telah berakhir.';
+  }
+
+  gameOverLeaderboardList.innerHTML = '';
+
+  if (!players || players.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'leaderboard-empty';
+    li.textContent = 'Belum ada data skor yang tercatat.';
+    gameOverLeaderboardList.appendChild(li);
+  } else {
+    players.forEach((player) => {
+      const li = document.createElement('li');
+      const isSelf = (player.id === getSelfKey());
+
+      li.className = `leaderboard-item rank-${player.rank} ${isSelf ? 'is-self' : ''}`;
+
+      let rankDisplay = `#${player.rank}`;
+      if (player.rank === 1) rankDisplay = '🥇 1';
+      else if (player.rank === 2) rankDisplay = '🥈 2';
+      else if (player.rank === 3) rankDisplay = '🥉 3';
+
+      const initial = (player.name || 'P').trim().charAt(0).toUpperCase() || 'P';
+
+      li.innerHTML = `
+        <div class="leaderboard-rank">${rankDisplay}</div>
+        <div class="leaderboard-avatar" aria-hidden="true">${escapeHtml(initial)}</div>
+        <div class="leaderboard-player-info">
+          <div class="leaderboard-name-row">
+            <span class="leaderboard-name" title="${escapeHtml(player.name)}">${escapeHtml(player.name)}</span>
+            ${player.is_host ? '<span class="badge-host">👑 HOST</span>' : ''}
+            ${isSelf ? '<span class="badge-you">(Kamu)</span>' : ''}
+          </div>
+        </div>
+        <div class="leaderboard-score-box">
+          <span class="leaderboard-score-val">${player.score}</span>
+          <span class="leaderboard-score-unit">pts</span>
+        </div>
+      `;
+      gameOverLeaderboardList.appendChild(li);
+    });
+  }
+
+  gameOverModal.classList.remove('hidden');
+}
+
+if (btnGameOverLeave) {
+  btnGameOverLeave.addEventListener('click', () => {
+    if (gameOverModal) gameOverModal.classList.add('hidden');
+    showLobby();
+  });
+}
+
 async function showLobby() {
+  if (gameOverModal) gameOverModal.classList.add('hidden');
   await leaveRoom();
 
   clearInterval(hostState.timerInterval);
@@ -620,12 +739,14 @@ function hostHandleTurnTimeout() {
   }, 3500);
 }
 
-/* Tombol ganti giliran manual untuk Host */
-btnHostNextWord.addEventListener('click', () => {
-  if (state.isHost) {
-    hostStartNextTurn();
-  }
-});
+/* Tombol ganti giliran manual untuk Host (jika ada di DOM) */
+if (btnHostNextWord) {
+  btnHostNextWord.addEventListener('click', () => {
+    if (state.isHost) {
+      hostStartNextTurn();
+    }
+  });
+}
 
 /* ============================================================
  * [AUTHORITATIVE - HOST ONLY] Validasi Tebakan & Hitung Skor (Fase 3b & 5a)
@@ -874,10 +995,12 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
   renderLeaderboard();
 
   /* Tombol ganti giliran manual hanya tampil pada Host */
-  if (state.isHost) {
-    btnHostNextWord.classList.remove('hidden');
-  } else {
-    btnHostNextWord.classList.add('hidden');
+  if (btnHostNextWord) {
+    if (state.isHost) {
+      btnHostNextWord.classList.remove('hidden');
+    } else {
+      btnHostNextWord.classList.add('hidden');
+    }
   }
 });
 
@@ -1201,6 +1324,18 @@ onMemberPresence((members) => {
   renderWaitingPlayerList(members);
   if (gameScreen && !gameScreen.classList.contains('hidden')) {
     renderLeaderboard();
+
+    /* Jika host keluar dari room saat game aktif: selesaikan permainan langsung */
+    if (!state.isHost && Array.isArray(members) && members.length > 0) {
+      const hasHost = members.some((m) => m.is_host);
+      if (!hasHost) {
+        handleGameOver({
+          reason:      'host-left',
+          message:     '👑 Host telah meninggalkan room. Permainan telah berakhir.',
+          leaderboard: leaderboardState.list,
+        });
+      }
+    }
   }
 });
 
@@ -1222,6 +1357,24 @@ onPlayerLeft(({ playerId, from, self }) => {
     ts:   Date.now(),
     self: false,
   });
+
+  /* Jika host keluar saat game aktif, selesaikan game langsung */
+  if (!state.isHost && gameScreen && !gameScreen.classList.contains('hidden')) {
+    const currentMembers = getMemberDetails();
+    const wasHost = currentMembers.find((m) => m.id === playerId && m.is_host);
+    if (wasHost) {
+      handleGameOver({
+        reason:      'host-left',
+        message:     '👑 Host telah keluar dari room. Permainan telah berakhir.',
+        leaderboard: leaderboardState.list,
+      });
+    }
+  }
+});
+
+/* Event game-over saat Host mengakhiri/meninggalkan room */
+onGameOver(({ reason, message, leaderboard }) => {
+  handleGameOver({ reason, message, leaderboard });
 });
 
 /* ============================================================
@@ -1502,7 +1655,22 @@ btnStartGame.addEventListener('click', async () => {
 });
 
 btnLeaveWaiting.addEventListener('click', showLobby);
-btnLeaveRoom.addEventListener('click', showLobby);
+
+btnLeaveRoom.addEventListener('click', async () => {
+  if (state.isHost) {
+    /* Host keluar saat game: siarkan game-over ke seluruh peer beserta leaderboard akhir */
+    const finalBoard = buildLeaderboardList(hostState.scores);
+    try {
+      await sendGameOver({
+        reason:      'host-left',
+        message:     '👑 Host telah meninggalkan room. Permainan telah berakhir.',
+        leaderboard: finalBoard,
+        finalScores: hostState.scores,
+      });
+    } catch (_) {}
+  }
+  await showLobby();
+});
 
 /* ============================================================
  * Canvas Sizing

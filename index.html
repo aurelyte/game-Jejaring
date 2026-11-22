@@ -272,10 +272,6 @@
             <span class="word-label" id="wordLabel">Tebak kata:</span>
             <div id="wordSlots" class="word-slots" aria-hidden="true"></div>
             <span class="word-hint" id="wordHint"></span>
-            <!-- Tombol ganti giliran untuk Host -->
-            <button id="btnHostNextWord" class="btn-host-action hidden" title="Host mengganti giliran ke pemain berikutnya">
-              ⏭️ Giliran Berikutnya
-            </button>
           </div>
 
           <!-- Info khusus Host (penggambar) -->
@@ -381,6 +377,33 @@
         </div>
 
       </div><!-- /#gameScreen -->
+
+      <!-- =====================================================
+           Modal Papan Skor Akhir (Game Over / Host Left)
+           ===================================================== -->
+      <div id="gameOverModal" class="game-over-modal hidden" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
+        <div class="game-over-card">
+          <div class="game-over-header">
+            <span class="game-over-icon" aria-hidden="true">🏆</span>
+            <h2 id="gameOverTitle" class="game-over-title">Permainan Selesai</h2>
+            <p id="gameOverNotice" class="game-over-notice">Host telah meninggalkan room. Permainan telah berakhir.</p>
+          </div>
+
+          <div class="game-over-podium-section">
+            <h3 class="game-over-section-title">Papan Skor Akhir</h3>
+            <ol id="gameOverLeaderboardList" class="game-over-list" aria-live="polite">
+              <!-- Rendered via JS -->
+            </ol>
+          </div>
+
+          <div class="game-over-actions">
+            <button id="btnGameOverLeave" class="btn-primary btn-lg btn-tactile">
+              ← Kembali ke Lobby
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /#app -->
 
     <script type="module" src="/src/main.js"></script>

@@ -81,6 +81,9 @@ const _gameStartListeners = [];
 /** @type {Array<(msg: {scores: Record<string, number>, leaderboard: any[], lastAward?: any, from: string, ts: number, self: boolean}) => void>} */
 const _scoreUpdateListeners = [];
 
+/** @type {Array<(msg: {reason: string, message: string, leaderboard: any[], finalScores: Record<string, number>, from: string, ts: number, self: boolean}) => void>} */
+const _gameOverListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
@@ -136,6 +139,9 @@ export function onGameStart(fn) { _gameStartListeners.push(fn); }
 /** @param {(msg: {scores: Record<string, number>, leaderboard: any[], lastAward?: any, from: string, ts: number, self: boolean}) => void} fn */
 export function onScoreUpdate(fn) { _scoreUpdateListeners.push(fn); }
 
+/** @param {(msg: {reason: string, message: string, leaderboard: any[], finalScores: Record<string, number>, from: string, ts: number, self: boolean}) => void} fn */
+export function onGameOver(fn) { _gameOverListeners.push(fn); }
+
 function _emitStatus(s)            { _statusListeners.forEach((fn) => fn(s)); }
 function _emitMembers(n, keys)     { _memberListeners.forEach((fn) => fn(n, keys)); }
 function _emitMemberPresence(m)    { _memberPresenceListeners.forEach((fn) => fn(m)); }
@@ -153,6 +159,7 @@ function _emitPlayerJoined(msg)    { _playerJoinedListeners.forEach((fn) => fn(m
 function _emitPlayerLeft(msg)      { _playerLeftListeners.forEach((fn) => fn(msg)); }
 function _emitGameStart(msg)       { _gameStartListeners.forEach((fn) => fn(msg)); }
 function _emitScoreUpdate(msg)     { _scoreUpdateListeners.forEach((fn) => fn(msg)); }
+function _emitGameOver(msg)        { _gameOverListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
  * Helpers
@@ -400,20 +407,37 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
     /* ---- Broadcast: guess-attempt from Client to Host (Fase 3b) ---- */
     _channel.on('broadcast', { event: 'guess-attempt' }, ({ payload }) => {
       if (!payload) return;
+      if (payload.from === getSelfKey()) return; // Sender sudah memprosesnya secara lokal
       _emitGuessAttempt({
         guess: payload.guess,
         from:  payload.from,
         ts:    payload.ts,
-        self:  payload.from === getSelfKey(),
+        self:  false,
       });
     });
 
     /* ---- Broadcast: guess-result from Host to all Clients (Fase 3b & 5a) ---- */
     _channel.on('broadcast', { event: 'guess-result' }, ({ payload }) => {
       if (!payload) return;
+      if (payload.from === getSelfKey()) return; // Host sudah memprosesnya secara lokal
       _emitGuessResult({
         ...payload,
-        self: payload.from === getSelfKey(),
+        self: false,
+      });
+    });
+
+    /* ---- Broadcast: game-over (Host Left or Game Terminated) ---- */
+    _channel.on('broadcast', { event: 'game-over' }, ({ payload }) => {
+      if (!payload) return;
+      if (payload.from === getSelfKey()) return;
+      _emitGameOver({
+        reason:      payload.reason || 'host-left',
+        message:     payload.message || 'Host telah meninggalkan room.',
+        leaderboard: payload.leaderboard || [],
+        finalScores: payload.finalScores || {},
+        from:        payload.from,
+        ts:          payload.ts,
+        self:        false,
       });
     });
 
@@ -635,14 +659,19 @@ export async function sendNewWord(hint) {
 export async function sendGuessAttempt(guess) {
   if (!_channel) return;
 
+  const payload = {
+    guess,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  /* Picu handler lokal untuk Host agar validasi berjalan instan */
+  _emitGuessAttempt({ ...payload, self: true });
+
   await _channel.send({
     type:    'broadcast',
     event:   'guess-attempt',
-    payload: {
-      guess,
-      from: getSelfKey(),
-      ts:   Date.now(),
-    },
+    payload,
   });
 }
 
@@ -856,6 +885,34 @@ export async function sendScoreUpdate(payload) {
     event:   'score-update',
     payload: fullPayload,
   });
+}
+
+/**
+ * sendGameOver - Broadcast that the game has concluded / host has left.
+ *
+ * @param {object} payload
+ * @param {string} payload.reason
+ * @param {string} payload.message
+ * @param {any[]} [payload.leaderboard]
+ * @param {Record<string, number>} [payload.finalScores]
+ */
+export async function sendGameOver(payload) {
+  if (!_channel) return;
+
+  const fullPayload = {
+    ...payload,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  /* Siarkan event game-over ke seluruh client */
+  await _channel.send({
+    type:    'broadcast',
+    event:   'game-over',
+    payload: fullPayload,
+  });
+
+  _emitGameOver({ ...fullPayload, self: true });
 }
 
 /* ============================================================
