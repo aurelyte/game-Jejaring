@@ -4,68 +4,100 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>Tebak Gambar</title>
+    <title>Tebak Gambar — Multiplayer Sketch & Guess</title>
+
+    <!-- Google Fonts: Outfit (Display & Numbers) + Plus Jakarta Sans (UI & Text) + JetBrains Mono (Codes) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app">
-      <h1>Tebak Gambar 🎮</h1>
+      <!-- Header Studio Branding -->
+      <header class="studio-header">
+        <div class="studio-badge">
+          <span class="studio-badge-dot"></span>
+          <span class="studio-badge-text">Pesta Sketsa Realtime</span>
+        </div>
+        <h1 class="studio-title">
+          <span class="title-accent">Tebak</span> Gambar
+          <span class="title-emoji" aria-hidden="true">✏️</span>
+        </h1>
+        <p class="studio-subtitle">Gambar imajinasimu, adu cepat tebak kata rahasia bersama teman</p>
+      </header>
 
       <!-- =====================================================
            Layar Lobby — tampil saat belum masuk room
            ===================================================== -->
-      <section id="lobbyScreen" class="lobby-screen" aria-label="Lobby">
+      <section id="lobbyScreen" class="lobby-screen" aria-label="Lobby Permainan">
 
         <div class="lobby-card">
-          <!-- input nama pemain -->
+          <!-- Input nama pemain -->
           <div class="name-block">
-            <label for="playerNameInput" class="name-label">Nama Anda</label>
-            <input
-              type="text"
-              id="playerNameInput"
-              class="name-input"
-              placeholder="Ketik namamu (misal: Zenn)"
-              maxlength="16"
-              autocomplete="nickname"
-              spellcheck="false"
-              aria-label="Nama Pemain"
-            />
+            <div class="name-header-row">
+              <label for="playerNameInput" class="name-label">Nama Panggilan</label>
+              <span class="name-hint">Maks. 16 karakter</span>
+            </div>
+            <div class="name-input-wrapper">
+              <span class="name-input-avatar" aria-hidden="true">👤</span>
+              <input
+                type="text"
+                id="playerNameInput"
+                class="name-input"
+                placeholder="Contoh: Zennova, Kiki, Bob"
+                maxlength="16"
+                autocomplete="nickname"
+                spellcheck="false"
+                aria-label="Nama Pemain"
+              />
+            </div>
           </div>
 
           <div class="lobby-blocks-grid">
-            <!-- buat room baru -->
-            <div class="lobby-block">
+            <!-- Buat room baru -->
+            <div class="lobby-block lobby-block--create">
+              <div class="block-icon-bubble" aria-hidden="true">⚡</div>
               <h2 class="lobby-heading">Buat Room Baru</h2>
-              <p class="lobby-desc">Generate kode acak, bagikan ke temanmu.</p>
-              <button id="btnCreateRoom" class="btn-primary btn-lg">
-                ✦ Buat Room
+              <p class="lobby-desc">Buka studio baru, jadilah host, dan undang temanmu dengan kode unik.</p>
+              <button id="btnCreateRoom" class="btn-primary btn-lg btn-tactile">
+                <span class="btn-icon">✦</span> Buat Room Baru
               </button>
             </div>
 
-            <div class="lobby-divider" aria-hidden="true">atau</div>
+            <div class="lobby-divider" aria-hidden="true">
+              <span>atau</span>
+            </div>
 
-            <!-- join room -->
-            <div class="lobby-block">
-              <h2 class="lobby-heading">Masuk Room</h2>
-              <p class="lobby-desc">Ketik kode 6 karakter dari temanmu.</p>
+            <!-- Join room -->
+            <div class="lobby-block lobby-block--join">
+              <div class="block-icon-bubble" aria-hidden="true">🎯</div>
+              <h2 class="lobby-heading">Gabung Room</h2>
+              <p class="lobby-desc">Sudah punya kode 6 karakter dari teman? Ketik di bawah untuk masuk.</p>
               <form id="joinForm" class="join-form" autocomplete="off" novalidate>
-                <input
-                  type="text"
-                  id="joinCodeInput"
-                  class="join-input"
-                  placeholder="A B 3 X 7 Q"
-                  maxlength="6"
-                  spellcheck="false"
-                  aria-label="Kode room"
-                />
-                <button type="submit" id="btnJoinRoom" class="btn-primary">
-                  Masuk →
+                <div class="join-input-wrapper">
+                  <input
+                    type="text"
+                    id="joinCodeInput"
+                    class="join-input"
+                    placeholder="Contoh: A B 3 X 7 Q"
+                    maxlength="6"
+                    spellcheck="false"
+                    aria-label="Kode room 6 karakter"
+                  />
+                </div>
+                <button type="submit" id="btnJoinRoom" class="btn-primary btn-tactile">
+                  Masuk Room
                 </button>
               </form>
             </div>
           </div>
 
-          <!-- pesan error / status lobby -->
+          <!-- Pesan error / status lobby -->
           <p id="joinError" class="join-error" aria-live="polite"></p>
         </div>
 
@@ -88,18 +120,23 @@
               </div>
             </div>
             <div class="waiting-status-badges">
-              <span class="status-badge status-badge--waiting">⏳ Menunggu Pemain</span>
+              <span class="status-badge status-badge--waiting">
+                <span class="pulse-dot"></span> Menunggu Pemain
+              </span>
               <span id="waitingPlayerCountBadge" class="player-count-badge">👥 1/8 Pemain</span>
             </div>
           </div>
 
           <p class="waiting-subtext">
-            Bagikan kode room di atas ke temanmu. Tunggu hingga semua pemain masuk ke daftar di bawah.
+            Bagikan kode room di atas kepada temanmu. Permainan akan dimulai saat Host menekan tombol mulai.
           </p>
 
           <!-- Daftar Pemain -->
           <div class="waiting-players-section">
-            <h3 class="waiting-players-title">Pemain Terdaftar</h3>
+            <div class="waiting-players-header">
+              <h3 class="waiting-players-title">Pemain di Studio</h3>
+              <span class="waiting-players-caption">Real-time presence</span>
+            </div>
             <ul id="waitingPlayerList" class="waiting-player-list" aria-live="polite">
               <!-- Rendered via JS -->
             </ul>
@@ -109,11 +146,11 @@
           <div class="waiting-actions">
             <!-- Kontrol khusus Host -->
             <div id="hostWaitingControls" class="host-waiting-controls">
-              <button id="btnStartGame" class="btn-primary btn-lg btn-start-game">
+              <button id="btnStartGame" class="btn-primary btn-lg btn-start-game btn-tactile">
                 🚀 Mulai Permainan
               </button>
               <p class="host-random-hint">
-                🎲 Penggambar pertama akan dipilih secara acak dari semua pemain online (termasuk Host).
+                🎲 Penggambar pertama akan diacak otomatis oleh sistem dari semua pemain yang online.
               </p>
             </div>
 
@@ -126,86 +163,99 @@
             <p id="waitingError" class="waiting-error" aria-live="assertive"></p>
 
             <button id="btnLeaveWaiting" class="btn-leave-waiting" title="Keluar dari ruang tunggu">
-              ← Keluar ke Lobby
+              ← Kembali ke Lobby
             </button>
           </div>
         </div>
       </section>
 
       <!-- =====================================================
-           Layar Game — tersembunyi sampai berhasil join
+           Layar Game — tersembunyi sampai masuk ke permainan
            ===================================================== -->
       <div id="gameScreen" class="game-screen hidden">
 
-        <!-- status bar: room code + koneksi + jumlah pemain + timer + status peran -->
+        <!-- Status bar HUD: room code + koneksi + jumlah pemain + timer + status peran -->
         <div class="room-bar" id="roomBar">
-          <span class="room-info">
-            Room: <strong id="roomCodeDisplay">—</strong>
-          </span>
-          <span class="room-members" id="roomMembers" title="Jumlah pemain di room">
-            👥 —
-          </span>
-          <span class="conn-badge" id="connBadge" data-status="disconnected">
-            ⬤ Menghubungkan…
-          </span>
-          <!-- timer giliran (Fase 3c) -->
-          <span id="timerBadge" class="timer-badge" title="Sisa waktu giliran">
-            ⏱️ 60s
-          </span>
-          <!-- role badge: Host vs Guesser -->
-          <span id="roleBadge" class="role-badge role-badge--host">
-            👑 Host
-          </span>
-          <!-- skor pemain saat ini (Fase 5a) -->
-          <span id="myScoreBadge" class="my-score-badge" title="Skor total Anda">
-            🏆 0 pts
-          </span>
-          <button id="btnLeaveRoom" class="btn-leave" title="Keluar dari room">
-            Keluar ✕
-          </button>
+          <div class="room-bar-left">
+            <span class="room-info">
+              <span class="room-info-label">Room</span>
+              <strong id="roomCodeDisplay">—</strong>
+            </span>
+            <span class="room-members" id="roomMembers" title="Jumlah pemain di room">
+              👥 —
+            </span>
+            <span class="conn-badge" id="connBadge" data-status="disconnected">
+              ⬤ Menghubungkan…
+            </span>
+          </div>
+
+          <div class="room-bar-center">
+            <!-- Timer giliran (Fase 3c) -->
+            <span id="timerBadge" class="timer-badge" title="Sisa waktu giliran">
+              ⏱️ 60s
+            </span>
+          </div>
+
+          <div class="room-bar-right">
+            <!-- Role badge: Host vs Guesser -->
+            <span id="roleBadge" class="role-badge role-badge--host">
+              👑 Host
+            </span>
+            <!-- Skor pemain saat ini (Fase 5a) -->
+            <span id="myScoreBadge" class="my-score-badge" title="Skor total Anda">
+              🏆 0 pts
+            </span>
+            <button id="btnLeaveRoom" class="btn-leave" title="Keluar dari room">
+              Keluar ✕
+            </button>
+          </div>
         </div>
 
-        <!-- banner penanda siapa yang sedang gambar -->
+        <!-- Banner penanda siapa yang sedang gambar -->
         <div id="drawingIndicator" class="drawing-indicator" aria-live="polite">
           🎨 Mode Aktif: Anda bisa menggambar di canvas
         </div>
 
-        <!-- canvas gambar -->
+        <!-- Canvas gambar & studio tablet -->
         <div class="canvas-wrapper" id="canvasWrapper">
-          <!-- toolbar: warna, ukuran kuas, clear -->
+          <!-- Toolbar: warna, ukuran kuas, clear -->
           <div class="toolbar" id="canvasToolbar">
-            <div class="tool-group" role="group" aria-label="Pilih warna">
+            <div class="tool-group" role="group" aria-label="Pilih warna kuas">
               <label class="sr-only">Warna</label>
-              <button class="swatch active" data-color="#f1f5f9"  style="background:#f1f5f9"  title="Putih"  aria-label="Putih"></button>
-              <button class="swatch"        data-color="#ef4444"  style="background:#ef4444"  title="Merah"  aria-label="Merah"></button>
-              <button class="swatch"        data-color="#f97316"  style="background:#f97316"  title="Oranye" aria-label="Oranye"></button>
-              <button class="swatch"        data-color="#facc15"  style="background:#facc15"  title="Kuning" aria-label="Kuning"></button>
-              <button class="swatch"        data-color="#4ade80"  style="background:#4ade80"  title="Hijau"  aria-label="Hijau"></button>
-              <button class="swatch"        data-color="#38bdf8"  style="background:#38bdf8"  title="Biru"   aria-label="Biru"></button>
-              <button class="swatch"        data-color="#a78bfa"  style="background:#a78bfa"  title="Ungu"   aria-label="Ungu"></button>
-              <button class="swatch"        data-color="#1e293b"  style="background:#1e293b"  title="Hitam"  aria-label="Hitam"></button>
-              <!-- color picker bebas -->
-              <label class="swatch swatch--picker" title="Warna bebas" aria-label="Pilih warna bebas">
+              <button class="swatch active" data-color="#1e293b" style="background:#1e293b" title="Hitam Tinta" aria-label="Hitam Tinta"></button>
+              <button class="swatch"        data-color="#ef4444" style="background:#ef4444" title="Merah Ruby" aria-label="Merah Ruby"></button>
+              <button class="swatch"        data-color="#f97316" style="background:#f97316" title="Oranye Sunset" aria-label="Oranye Sunset"></button>
+              <button class="swatch"        data-color="#f59e0b" style="background:#f59e0b" title="Kuning Amber" aria-label="Kuning Amber"></button>
+              <button class="swatch"        data-color="#10b981" style="background:#10b981" title="Hijau Mint" aria-label="Hijau Mint"></button>
+              <button class="swatch"        data-color="#06b6d4" style="background:#06b6d4" title="Biru Samudra" aria-label="Biru Samudra"></button>
+              <button class="swatch"        data-color="#6366f1" style="background:#6366f1" title="Ungu Iris" aria-label="Ungu Iris"></button>
+              <button class="swatch"        data-color="#ffffff" style="background:#ffffff; border-color: #cbd5e1" title="Putih Penghapus" aria-label="Putih Penghapus"></button>
+              <!-- Color picker bebas -->
+              <label class="swatch swatch--picker" title="Pilih warna kustom" aria-label="Pilih warna kustom">
                 🎨
-                <input type="color" id="colorPicker" value="#f1f5f9" />
+                <input type="color" id="colorPicker" value="#1e293b" />
               </label>
             </div>
 
+            <div class="toolbar-divider" aria-hidden="true"></div>
+
             <div class="tool-group" role="group" aria-label="Ukuran kuas">
               <label class="sr-only">Ukuran kuas</label>
-              <button class="size-btn" data-size="4"  title="Kecil"  aria-label="Kecil">S</button>
-              <button class="size-btn active" data-size="12" title="Sedang" aria-label="Sedang">M</button>
-              <button class="size-btn" data-size="28" title="Besar"  aria-label="Besar">L</button>
+              <button class="size-btn" data-size="4"  title="Kecil (4px)"  aria-label="Kecil">S</button>
+              <button class="size-btn active" data-size="12" title="Sedang (12px)" aria-label="Sedang">M</button>
+              <button class="size-btn" data-size="28" title="Besar (28px)"  aria-label="Besar">L</button>
             </div>
 
-            <div class="tool-group">
-              <button id="clearBtn" class="btn-clear" title="Hapus semua" aria-label="Hapus canvas">
-                🗑 Clear
+            <div class="toolbar-divider" aria-hidden="true"></div>
+
+            <div class="tool-group tool-group--actions">
+              <button id="clearBtn" class="btn-clear" title="Bersihkan canvas" aria-label="Hapus canvas">
+                🗑 Hapus
               </button>
             </div>
           </div>
 
-          <!-- area gambar & kursor kustom -->
+          <!-- Area gambar & kursor kustom -->
           <div class="canvas-stage" id="canvasStage">
             <canvas id="drawCanvas"></canvas>
             <div id="brushCursor" aria-hidden="true"></div>
@@ -215,22 +265,22 @@
         <!-- ===================================================
              Guess box
              =================================================== -->
-        <section class="guess-section" aria-label="Area tebakan">
+        <section class="guess-section" aria-label="Area tebakan kata">
 
-          <!-- status kata: hint karakter + kata tersembunyi / kata host -->
+          <!-- Status kata: hint karakter + kata tersembunyi / kata host -->
           <div class="word-display" aria-live="polite" aria-label="Kata yang harus ditebak">
             <span class="word-label" id="wordLabel">Tebak kata:</span>
             <div id="wordSlots" class="word-slots" aria-hidden="true"></div>
             <span class="word-hint" id="wordHint"></span>
-            <!-- tombol ganti giliran untuk Host -->
+            <!-- Tombol ganti giliran untuk Host -->
             <button id="btnHostNextWord" class="btn-host-action hidden" title="Host mengganti giliran ke pemain berikutnya">
               ⏭️ Giliran Berikutnya
             </button>
           </div>
 
-          <!-- info khusus Host (penggambar) -->
+          <!-- Info khusus Host (penggambar) -->
           <p id="hostGuessNotice" class="host-notice hidden">
-            🎨 Anda sedang menggambar kata rahasia. Biarkan pemain lain menebaknya!
+            🎨 Anda sedang menggambar kata rahasia di canvas. Biarkan pemain lain menebaknya!
           </p>
 
           <!-- Power-up Bar (Fase 4b & 4c) -->
@@ -254,28 +304,30 @@
             <span id="freezeTimerBadge" class="freeze-timer">5s</span>
           </div>
 
-          <!-- form tebak (aktif untuk non-host/penebak) -->
+          <!-- Form tebak (aktif untuk non-host/penebak) -->
           <form class="guess-form" id="guessForm" autocomplete="off" novalidate>
-            <input
-              type="text"
-              id="guessInput"
-              class="guess-input"
-              placeholder="Ketik tebakanmu…"
-              aria-label="Input tebakan"
-              maxlength="40"
-              spellcheck="false"
-            />
-            <button type="submit" class="btn-submit">Tebak →</button>
+            <div class="guess-input-container">
+              <input
+                type="text"
+                id="guessInput"
+                class="guess-input"
+                placeholder="Ketik tebakan katamu di sini…"
+                aria-label="Input tebakan kata"
+                maxlength="40"
+                spellcheck="false"
+              />
+              <button type="submit" class="btn-submit btn-tactile">Kirim Tebakan</button>
+            </div>
           </form>
 
-          <!-- feedback -->
+          <!-- Feedback jawaban -->
           <p class="feedback" id="feedback" aria-live="assertive" aria-atomic="true"></p>
 
-          <!-- skor sederhana -->
+          <!-- Skor statistik ronde sederhana -->
           <p class="score-line">
-            Benar: <strong id="scoreCorrect">0</strong>
-            &nbsp;·&nbsp;
-            Coba lagi: <strong id="scoreWrong">0</strong>
+            <span class="score-stat score-stat--correct">Tebakan Tepat: <strong id="scoreCorrect">0</strong></span>
+            <span class="score-stat-divider">·</span>
+            <span class="score-stat score-stat--wrong">Meleset: <strong id="scoreWrong">0</strong></span>
           </p>
         </section>
 
@@ -286,7 +338,10 @@
           <!-- Leaderboard / Papan Skor Real-Time -->
           <section class="leaderboard-section" id="leaderboardSection" aria-label="Papan Skor">
             <div class="leaderboard-header">
-              <h2 class="leaderboard-heading">🏆 Papan Skor</h2>
+              <div class="leaderboard-heading-group">
+                <span class="leaderboard-header-icon" aria-hidden="true">🏆</span>
+                <h2 class="leaderboard-heading">Papan Skor</h2>
+              </div>
               <span class="leaderboard-total-badge" id="leaderboardTotalPlayers">👥 — Pemain</span>
             </div>
 
@@ -296,25 +351,31 @@
             </ol>
           </section>
 
-          <!-- Chat panel (Fase 2b) — broadcast test -->
+          <!-- Chat panel (Fase 2b) -->
           <section class="chat-section" aria-label="Chat room">
-            <h2 class="chat-heading">💬 Chat Room</h2>
+            <div class="chat-header">
+              <div class="chat-heading-group">
+                <span class="chat-header-icon" aria-hidden="true">💬</span>
+                <h2 class="chat-heading">Obrolan Studio</h2>
+              </div>
+              <span class="chat-header-hint">Tebakan & Pesan</span>
+            </div>
 
-            <!-- message list -->
-            <ol id="chatList" class="chat-list" aria-live="polite" aria-label="Pesan chat"></ol>
+            <!-- Message list -->
+            <ol id="chatList" class="chat-list" aria-live="polite" aria-label="Pesan obrolan"></ol>
 
-            <!-- send form -->
+            <!-- Send form -->
             <form id="chatForm" class="chat-form" autocomplete="off" novalidate>
               <input
                 type="text"
                 id="chatInput"
                 class="chat-input"
-                placeholder="Ketik pesan…"
+                placeholder="Kirim pesan santai…"
                 maxlength="200"
-                aria-label="Ketik pesan chat"
+                aria-label="Ketik pesan obrolan"
                 spellcheck="false"
               />
-              <button type="submit" class="btn-chat-send">Kirim</button>
+              <button type="submit" class="btn-chat-send btn-tactile">Kirim</button>
             </form>
           </section>
         </div>
