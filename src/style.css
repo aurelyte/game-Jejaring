@@ -323,3 +323,212 @@ h1 {
 .score-line strong {
   color: #cbd5e1;
 }
+
+/* ============================================================
+ * Utility
+ * ============================================================ */
+.hidden { display: none !important; }
+
+/* ============================================================
+ * Lobby screen
+ * ============================================================ */
+.lobby-screen {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.lobby-card {
+  width: 100%;
+  max-width: 480px;
+  background: #1e293b;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.lobby-heading {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+  color: #f1f5f9;
+}
+
+.lobby-desc {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-bottom: 0.75rem;
+}
+
+.lobby-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.lobby-divider {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #475569;
+  position: relative;
+}
+
+.lobby-divider::before,
+.lobby-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 42%;
+  height: 1px;
+  background: #334155;
+}
+
+.lobby-divider::before { left: 0; }
+.lobby-divider::after  { right: 0; }
+
+/* ----- shared button base ----- */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px;
+  border: none;
+  background: #38bdf8;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.btn-primary:hover  { background: #7dd3fc; }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-primary.btn-lg {
+  padding: 0.75rem 1.75rem;
+  font-size: 1rem;
+  align-self: flex-start;
+}
+
+/* ----- join form ----- */
+.join-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.join-input {
+  flex: 1;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  border: 2px solid #334155;
+  background: #0f172a;
+  color: #f1f5f9;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.join-input:focus {
+  border-color: #38bdf8;
+}
+
+.join-input.error {
+  border-color: #ef4444;
+}
+
+.join-error {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: #f87171;
+  min-height: 1.1em;
+}
+
+/* ============================================================
+ * Game screen
+ * ============================================================ */
+.game-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ----- room status bar ----- */
+.room-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+}
+
+.room-info {
+  flex: 1;
+  color: #94a3b8;
+}
+
+.room-info strong {
+  color: #f1f5f9;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
+}
+
+.room-members {
+  color: #94a3b8;
+}
+
+/* connection badge */
+.conn-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #64748b;
+  transition: background 0.3s, color 0.3s;
+}
+
+.conn-badge[data-status="connecting"] {
+  color: #facc15;
+}
+
+.conn-badge[data-status="connected"] {
+  background: #052e16;
+  color: #4ade80;
+}
+
+.conn-badge[data-status="disconnected"] {
+  color: #64748b;
+}
+
+.conn-badge[data-status="error"] {
+  background: #450a0a;
+  color: #f87171;
+}
+
+/* leave button */
+.btn-leave {
+  padding: 0.3rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn-leave:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}

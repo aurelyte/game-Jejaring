@@ -3,9 +3,12 @@
  *
  * Fase 1b: canvas gambar lokal, 100% client-side.
  * Fase 1c: guess box lokal — tebak kata hardcoded, belum multiplayer.
+ * Fase 2a: Supabase Realtime room — lobby, join/create, status koneksi.
  * Native Canvas API, tanpa library eksternal.
  *
  * Fitur:
+ *   - Lobby: buat room (kode acak) atau join dengan kode
+ *   - Room bar: kode room, jumlah pemain, badge koneksi, tombol leave
  *   - Drawing dengan mouse/touch via Pointer Events API
  *   - Pilihan warna (swatch + color picker)
  *   - Pilihan ukuran kuas (S / M / L)
@@ -15,6 +18,140 @@
  *   - Guess box: input tebakan, feedback benar/salah, skor lokal
  *   - Kata dipilih random dari array; baru digenerate setelah benar
  */
+
+import {
+  generateRoomCode,
+  joinRoom,
+  leaveRoom,
+  onStatusChange,
+  onMemberChange,
+} from './room.js';
+
+/* ============================================================
+ * Screen switching
+ * ============================================================ */
+
+const lobbyScreen = /** @type {HTMLElement} */ (document.getElementById('lobbyScreen'));
+const gameScreen  = /** @type {HTMLElement} */ (document.getElementById('gameScreen'));
+
+/**
+ * showGame - Hide lobby, reveal game screen, then initialise canvas.
+ *
+ * Canvas sizing (resize()) must run after the wrapper is visible so
+ * offsetWidth returns the real layout width.
+ */
+function showGame() {
+  lobbyScreen.classList.add('hidden');
+  gameScreen.classList.remove('hidden');
+  /* canvas was invisible during lobby; force a fresh size calculation */
+  resize();
+}
+
+/** showLobby - Return to lobby, leave the current room. */
+async function showLobby() {
+  await leaveRoom();
+  gameScreen.classList.add('hidden');
+  lobbyScreen.classList.remove('hidden');
+  joinCodeInput.value = '';
+  joinErrorEl.textContent = '';
+}
+
+/* ============================================================
+ * Room bar DOM refs
+ * ============================================================ */
+const roomCodeDisplay = /** @type {HTMLElement}      */ (document.getElementById('roomCodeDisplay'));
+const roomMembersEl   = /** @type {HTMLElement}      */ (document.getElementById('roomMembers'));
+const connBadgeEl     = /** @type {HTMLElement}      */ (document.getElementById('connBadge'));
+const btnLeaveRoom    = /** @type {HTMLButtonElement} */ (document.getElementById('btnLeaveRoom'));
+
+/* ============================================================
+ * Lobby DOM refs
+ * ============================================================ */
+const btnCreateRoom  = /** @type {HTMLButtonElement} */ (document.getElementById('btnCreateRoom'));
+const joinForm       = /** @type {HTMLFormElement}   */ (document.getElementById('joinForm'));
+const joinCodeInput  = /** @type {HTMLInputElement}  */ (document.getElementById('joinCodeInput'));
+const joinErrorEl    = /** @type {HTMLParagraphElement} */ (document.getElementById('joinError'));
+
+/* ============================================================
+ * Connection status → room bar badge
+ * ============================================================ */
+
+/** CONN_LABEL - Human-readable labels for each connection status. */
+const CONN_LABEL = {
+  connecting:   '⬤ Menghubungkan…',
+  connected:    '⬤ Terhubung',
+  disconnected: '⬤ Terputus',
+  error:        '⬤ Error',
+};
+
+onStatusChange((status) => {
+  connBadgeEl.dataset.status  = status;
+  connBadgeEl.textContent     = CONN_LABEL[status] ?? status;
+});
+
+onMemberChange((count) => {
+  roomMembersEl.textContent = `👥 ${count} pemain`;
+});
+
+/* ============================================================
+ * Enter room helper (shared by create + join flows)
+ * ============================================================ */
+
+/**
+ * enterRoom - Join a Supabase channel and transition to the game screen.
+ *
+ * Shows an inline error on the lobby form when the room code is invalid
+ * or connection fails; otherwise wires up the room bar and shows the game.
+ *
+ * @param {string} code
+ */
+async function enterRoom(code) {
+  const trimmed = code.trim().toUpperCase();
+
+  if (!/^[A-Z0-9]{6}$/.test(trimmed)) {
+    joinErrorEl.textContent = 'Kode harus 6 karakter (huruf/angka).';
+    joinCodeInput.classList.add('error');
+    return;
+  }
+
+  joinErrorEl.textContent = '';
+  joinCodeInput.classList.remove('error');
+  btnCreateRoom.disabled = true;
+
+  try {
+    await joinRoom(trimmed);
+    roomCodeDisplay.textContent = trimmed;
+    showGame();
+    nextWord();
+  } catch (err) {
+    joinErrorEl.textContent = `Gagal terhubung: ${err.message}`;
+  } finally {
+    btnCreateRoom.disabled = false;
+  }
+}
+
+/* ============================================================
+ * Lobby events
+ * ============================================================ */
+
+btnCreateRoom.addEventListener('click', () => {
+  const code = generateRoomCode();
+  enterRoom(code);
+});
+
+joinForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  enterRoom(joinCodeInput.value);
+});
+
+/* force uppercase while typing */
+joinCodeInput.addEventListener('input', () => {
+  const sel   = joinCodeInput.selectionStart;
+  joinCodeInput.value = joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  joinCodeInput.setSelectionRange(sel, sel);
+});
+
+btnLeaveRoom.addEventListener('click', showLobby);
 
 /* ============================================================
  * State

@@ -11,84 +11,149 @@
     <div id="app">
       <h1>Tebak Gambar 🎮</h1>
 
-      <div class="canvas-wrapper">
-        <!-- toolbar: warna, ukuran kuas, clear -->
-        <div class="toolbar">
-          <div class="tool-group" role="group" aria-label="Pilih warna">
-            <label class="sr-only">Warna</label>
-            <button class="swatch active" data-color="#f1f5f9"  style="background:#f1f5f9"  title="Putih"  aria-label="Putih"></button>
-            <button class="swatch"        data-color="#ef4444"  style="background:#ef4444"  title="Merah"  aria-label="Merah"></button>
-            <button class="swatch"        data-color="#f97316"  style="background:#f97316"  title="Oranye" aria-label="Oranye"></button>
-            <button class="swatch"        data-color="#facc15"  style="background:#facc15"  title="Kuning" aria-label="Kuning"></button>
-            <button class="swatch"        data-color="#4ade80"  style="background:#4ade80"  title="Hijau"  aria-label="Hijau"></button>
-            <button class="swatch"        data-color="#38bdf8"  style="background:#38bdf8"  title="Biru"   aria-label="Biru"></button>
-            <button class="swatch"        data-color="#a78bfa"  style="background:#a78bfa"  title="Ungu"   aria-label="Ungu"></button>
-            <button class="swatch"        data-color="#1e293b"  style="background:#1e293b"  title="Hitam"  aria-label="Hitam"></button>
-            <!-- color picker bebas -->
-            <label class="swatch swatch--picker" title="Warna bebas" aria-label="Pilih warna bebas">
-              🎨
-              <input type="color" id="colorPicker" value="#f1f5f9" />
-            </label>
-          </div>
+      <!-- =====================================================
+           Layar Lobby — tampil saat belum masuk room
+           ===================================================== -->
+      <section id="lobbyScreen" class="lobby-screen" aria-label="Lobby">
 
-          <div class="tool-group" role="group" aria-label="Ukuran kuas">
-            <label class="sr-only">Ukuran kuas</label>
-            <button class="size-btn" data-size="4"  title="Kecil"  aria-label="Kecil">S</button>
-            <button class="size-btn active" data-size="12" title="Sedang" aria-label="Sedang">M</button>
-            <button class="size-btn" data-size="28" title="Besar"  aria-label="Besar">L</button>
-          </div>
-
-          <div class="tool-group">
-            <button id="clearBtn" class="btn-clear" title="Hapus semua" aria-label="Hapus canvas">
-              🗑 Clear
+        <div class="lobby-card">
+          <!-- buat room baru -->
+          <div class="lobby-block">
+            <h2 class="lobby-heading">Buat Room Baru</h2>
+            <p class="lobby-desc">Generate kode acak, bagikan ke temanmu.</p>
+            <button id="btnCreateRoom" class="btn-primary btn-lg">
+              ✦ Buat Room
             </button>
           </div>
+
+          <div class="lobby-divider" aria-hidden="true">atau</div>
+
+          <!-- join room -->
+          <div class="lobby-block">
+            <h2 class="lobby-heading">Masuk Room</h2>
+            <p class="lobby-desc">Ketik kode 6 karakter dari temanmu.</p>
+            <form id="joinForm" class="join-form" autocomplete="off" novalidate>
+              <input
+                type="text"
+                id="joinCodeInput"
+                class="join-input"
+                placeholder="A B 3 X 7 Q"
+                maxlength="6"
+                spellcheck="false"
+                aria-label="Kode room"
+              />
+              <button type="submit" class="btn-primary">
+                Masuk →
+              </button>
+            </form>
+            <p id="joinError" class="join-error" aria-live="polite"></p>
+          </div>
         </div>
 
-        <!-- area gambar -->
-        <canvas id="drawCanvas"></canvas>
-
-        <!-- kursor kustom: ukuran kuas -->
-        <div id="brushCursor" aria-hidden="true"></div>
-      </div>
+      </section>
 
       <!-- =====================================================
-           Guess box
+           Layar Game — tersembunyi sampai berhasil join
            ===================================================== -->
-      <section class="guess-section" aria-label="Area tebakan">
+      <div id="gameScreen" class="game-screen hidden">
 
-        <!-- status kata: hint karakter + kata tersembunyi -->
-        <div class="word-display" aria-live="polite" aria-label="Kata yang harus ditebak">
-          <span class="word-label">Tebak kata:</span>
-          <div id="wordSlots" class="word-slots" aria-hidden="true"></div>
-          <span class="word-hint" id="wordHint"></span>
+        <!-- status bar: room code + koneksi + jumlah pemain -->
+        <div class="room-bar" id="roomBar">
+          <span class="room-info">
+            Room: <strong id="roomCodeDisplay">—</strong>
+          </span>
+          <span class="room-members" id="roomMembers" title="Jumlah pemain di room">
+            👥 —
+          </span>
+          <span class="conn-badge" id="connBadge" data-status="disconnected">
+            ⬤ Menghubungkan…
+          </span>
+          <button id="btnLeaveRoom" class="btn-leave" title="Keluar dari room">
+            Keluar ✕
+          </button>
         </div>
 
-        <!-- form tebak -->
-        <form class="guess-form" id="guessForm" autocomplete="off" novalidate>
-          <input
-            type="text"
-            id="guessInput"
-            class="guess-input"
-            placeholder="Ketik tebakanmu…"
-            aria-label="Input tebakan"
-            maxlength="40"
-            spellcheck="false"
-          />
-          <button type="submit" class="btn-submit">Tebak →</button>
-        </form>
+        <!-- canvas gambar -->
+        <div class="canvas-wrapper">
+          <!-- toolbar: warna, ukuran kuas, clear -->
+          <div class="toolbar">
+            <div class="tool-group" role="group" aria-label="Pilih warna">
+              <label class="sr-only">Warna</label>
+              <button class="swatch active" data-color="#f1f5f9"  style="background:#f1f5f9"  title="Putih"  aria-label="Putih"></button>
+              <button class="swatch"        data-color="#ef4444"  style="background:#ef4444"  title="Merah"  aria-label="Merah"></button>
+              <button class="swatch"        data-color="#f97316"  style="background:#f97316"  title="Oranye" aria-label="Oranye"></button>
+              <button class="swatch"        data-color="#facc15"  style="background:#facc15"  title="Kuning" aria-label="Kuning"></button>
+              <button class="swatch"        data-color="#4ade80"  style="background:#4ade80"  title="Hijau"  aria-label="Hijau"></button>
+              <button class="swatch"        data-color="#38bdf8"  style="background:#38bdf8"  title="Biru"   aria-label="Biru"></button>
+              <button class="swatch"        data-color="#a78bfa"  style="background:#a78bfa"  title="Ungu"   aria-label="Ungu"></button>
+              <button class="swatch"        data-color="#1e293b"  style="background:#1e293b"  title="Hitam"  aria-label="Hitam"></button>
+              <!-- color picker bebas -->
+              <label class="swatch swatch--picker" title="Warna bebas" aria-label="Pilih warna bebas">
+                🎨
+                <input type="color" id="colorPicker" value="#f1f5f9" />
+              </label>
+            </div>
 
-        <!-- feedback -->
-        <p class="feedback" id="feedback" aria-live="assertive" aria-atomic="true"></p>
+            <div class="tool-group" role="group" aria-label="Ukuran kuas">
+              <label class="sr-only">Ukuran kuas</label>
+              <button class="size-btn" data-size="4"  title="Kecil"  aria-label="Kecil">S</button>
+              <button class="size-btn active" data-size="12" title="Sedang" aria-label="Sedang">M</button>
+              <button class="size-btn" data-size="28" title="Besar"  aria-label="Besar">L</button>
+            </div>
 
-        <!-- skor sederhana -->
-        <p class="score-line">
-          Benar: <strong id="scoreCorrect">0</strong>
-          &nbsp;·&nbsp;
-          Coba lagi: <strong id="scoreWrong">0</strong>
-        </p>
-      </section>
-    </div>
+            <div class="tool-group">
+              <button id="clearBtn" class="btn-clear" title="Hapus semua" aria-label="Hapus canvas">
+                🗑 Clear
+              </button>
+            </div>
+          </div>
+
+          <!-- area gambar -->
+          <canvas id="drawCanvas"></canvas>
+
+          <!-- kursor kustom: ukuran kuas -->
+          <div id="brushCursor" aria-hidden="true"></div>
+        </div>
+
+        <!-- ===================================================
+             Guess box
+             =================================================== -->
+        <section class="guess-section" aria-label="Area tebakan">
+
+          <!-- status kata: hint karakter + kata tersembunyi -->
+          <div class="word-display" aria-live="polite" aria-label="Kata yang harus ditebak">
+            <span class="word-label">Tebak kata:</span>
+            <div id="wordSlots" class="word-slots" aria-hidden="true"></div>
+            <span class="word-hint" id="wordHint"></span>
+          </div>
+
+          <!-- form tebak -->
+          <form class="guess-form" id="guessForm" autocomplete="off" novalidate>
+            <input
+              type="text"
+              id="guessInput"
+              class="guess-input"
+              placeholder="Ketik tebakanmu…"
+              aria-label="Input tebakan"
+              maxlength="40"
+              spellcheck="false"
+            />
+            <button type="submit" class="btn-submit">Tebak →</button>
+          </form>
+
+          <!-- feedback -->
+          <p class="feedback" id="feedback" aria-live="assertive" aria-atomic="true"></p>
+
+          <!-- skor sederhana -->
+          <p class="score-line">
+            Benar: <strong id="scoreCorrect">0</strong>
+            &nbsp;·&nbsp;
+            Coba lagi: <strong id="scoreWrong">0</strong>
+          </p>
+        </section>
+
+      </div><!-- /#gameScreen -->
+    </div><!-- /#app -->
 
     <script type="module" src="/src/main.js"></script>
   </body>
