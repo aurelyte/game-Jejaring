@@ -7,18 +7,20 @@
  * Fase 2b: broadcast 'chat' — uji dua-arah sebelum stroke gambar.
  * Fase 2c: broadcast stroke real-time dengan batching ~60ms.
  * Fase 3a: Host-authoritative word generation + kata soal tersensor.
+ * Fase 3b: Guess divalidasi oleh Host ('guess-attempt' & 'guess-result').
  *
  * Catatan Arsitektur (Host vs Client):
  *   [AUTHORITATIVE - HOST ONLY]:
  *     - Memilih kata rahasia dari WORD_LIST.
  *     - Menyimpan kata asli (plain text) hanya di memori lokal Host.
- *     - Membuat versi tersensor (jumlah huruf dan slot underscore).
  *     - Menyiarkan event 'new-word' berisi hint ke room (kata asli TIDAK dikirim).
- *     - Memiliki hak akses penuh untuk menggambar (Drawer) & tombol "Kata Baru".
+ *     - Menerima event 'guess-attempt' dari pemain, memvalidasi dengan kata asli.
+ *     - Menyiarkan event 'guess-result' (status benar/salah, kata asli jika benar).
+ *     - Menjadwalkan ronde berikutnya jika ada pemain yang menebak benar.
  *   [CLIENT - RENDER ONLY]:
- *     - Menerima event 'new-word' yang berisi hint tersensor.
- *     - Merender slot kosong/underscore tanpa mengetahui kata aslinya.
- *     - Berperan sebagai Penebak (Guesser): canvas view-only, toolbar disembunyikan.
+ *     - Mengirimkan 'guess-attempt' ke Host saat submit form tebak (tanpa validasi lokal).
+ *     - Menerima 'guess-result' dari Host, lalu memperbarui skor, status kata, dan chat.
+ *     - Menerima 'new-word' yang berisi hint tersensor (jumlah huruf dan slot underscore).
  */
 
 import {
@@ -29,12 +31,17 @@ import {
   sendStroke,
   sendClear,
   sendNewWord,
+  sendGuessAttempt,
+  sendGuessResult,
   onStatusChange,
   onMemberChange,
   onChatMessage,
   onStroke,
   onClear,
   onNewWord,
+  onGuessAttempt,
+  onGuessResult,
+  getSelfKey,
 } from './room.js';
 
 /* ============================================================
@@ -60,6 +67,12 @@ const state = {
   drawing:  false,
   lastX:    0,
   lastY:    0,
+};
+
+/* Skor permainan tersinkronisasi berdasarkan 'guess-result' */
+const scoreState = {
+  correct: 0,
+  wrong:   0,
 };
 
 /* stroke batching buffer (Fase 2c) */
@@ -149,12 +162,16 @@ function showGame() {
 
 async function showLobby() {
   await leaveRoom();
-  state.isHost           = false;
-  state.isDrawer         = false;
-  hostState.secretWord   = '';
+  state.isHost            = false;
+  state.isDrawer          = false;
+  hostState.secretWord    = '';
+  scoreState.correct      = 0;
+  scoreState.wrong        = 0;
+  scoreCorrectEl.textContent = '0';
+  scoreWrongEl.textContent   = '0';
   gameScreen.classList.add('hidden');
   lobbyScreen.classList.remove('hidden');
-  joinCodeInput.value    = '';
+  joinCodeInput.value     = '';
   joinErrorEl.textContent = '';
 }
 
@@ -221,6 +238,47 @@ btnHostNextWord.addEventListener('click', () => {
 });
 
 /* ============================================================
+ * [AUTHORITATIVE - HOST] Validasi Tebakan (Fase 3b)
+ * ============================================================
+ * HANYA Host yang menerima dan mengevaluasi 'guess-attempt':
+ * - Mengecek apakah tebakan cocok (case-insensitive & trim)
+ *   dengan kata asli yang dipegang host (hostState.secretWord).
+ * - Menyiarkan event 'guess-result' ke semua client di room.
+ * - Jika tebakan BENAR, Host menyertakan kata asli dalam broadcast
+ *   dan menjadwalkan ronde baru (hostPickAndBroadcastWord).
+ * ============================================================ */
+
+let nextRoundTimer = null;
+
+onGuessAttempt(async ({ guess, from }) => {
+  /* HANYA Host yang memiliki wewenang memvalidasi tebakan */
+  if (!state.isHost) return;
+  if (!hostState.secretWord) return;
+
+  const cleanedGuess  = guess.trim().toLowerCase();
+  const cleanedAnswer = hostState.secretWord.trim().toLowerCase();
+  const isCorrect     = (cleanedGuess === cleanedAnswer);
+
+  /* Siarkan hasil evaluasi ke seluruh client di room */
+  await sendGuessResult({
+    isCorrect,
+    guesserId: from,
+    guess,
+    word: isCorrect ? hostState.secretWord : null,
+  });
+
+  /* Jika benar, Host otomatis memulai ronde baru setelah jeda */
+  if (isCorrect) {
+    clearTimeout(nextRoundTimer);
+    nextRoundTimer = setTimeout(() => {
+      if (state.isHost) {
+        hostPickAndBroadcastWord();
+      }
+    }, 3200);
+  }
+});
+
+/* ============================================================
  * [CLIENT - RENDER ONLY] Penerima Soal Tersensor
  * ============================================================
  * Dijalankan oleh client Penebak saat menerima event 'new-word':
@@ -253,6 +311,62 @@ onNewWord(({ hint, self }) => {
   renderGuesserWordSlots(hint);
   clearCanvas();
   showFeedback('🎲 Host telah memilih kata baru! Perhatikan gambar dan tebak.', 'correct', 2500);
+});
+
+/* ============================================================
+ * [CLIENT - RENDER ONLY] Update UI Berdasarkan 'guess-result'
+ * ============================================================
+ * Semua client (Host dan Penebak) memperbarui UI secara sinkron
+ * berdasarkan hasil validasi yang disiarkan oleh Host (bukan validasi sendiri):
+ * ============================================================ */
+
+onGuessResult(({ isCorrect, guesserId, guess, word }) => {
+  const isMyGuess   = (guesserId === getSelfKey());
+  const guesserName = isMyGuess ? 'Kamu' : `Peer ${guesserId.slice(0, 4)}`;
+
+  if (isCorrect) {
+    /* 1. Update skor benar */
+    scoreState.correct += 1;
+    scoreCorrectEl.textContent = String(scoreState.correct);
+
+    /* 2. Tampilkan kata yang tertebak di layar untuk semua pemain */
+    wordLabelEl.textContent = 'Kata tertebak:';
+    wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(word)}</span>`;
+    wordHintEl.textContent  = `(Ditebak oleh ${guesserName}! Menyiapkan ronde berikutnya...)`;
+
+    /* 3. Feedback visual */
+    if (isMyGuess) {
+      showFeedback(`🎉 BENAR! Kamu berhasil menebak: "${word}"`, 'correct', 3000);
+    } else {
+      showFeedback(`🎉 ${guesserName} berhasil menebak: "${word}"!`, 'correct', 3000);
+    }
+
+    /* 4. Notifikasi publik di chat */
+    appendChatMessage({
+      text: `🏆 [TEBAKAN BENAR] ${guesserName} berhasil menebak: "${word}"!`,
+      from: 'system',
+      ts:   Date.now(),
+      self: isMyGuess,
+    });
+  } else {
+    /* 1. Update skor coba lagi / salah */
+    scoreState.wrong += 1;
+    scoreWrongEl.textContent = String(scoreState.wrong);
+
+    /* 2. Feedback jika tebakan salah berasal dari client ini */
+    if (isMyGuess) {
+      showFeedback(`❌ "${guess}" salah! Coba lagi.`, 'wrong', 1800);
+      triggerShake();
+    }
+
+    /* 3. Catat di chat sebagai tebakan */
+    appendChatMessage({
+      text: `[Tebakan]: ${guess} ❌`,
+      from: guesserId,
+      ts:   Date.now(),
+      self: isMyGuess,
+    });
+  }
 });
 
 /* ============================================================
@@ -413,7 +527,7 @@ btnLeaveRoom.addEventListener('click', showLobby);
 
 function resize() {
   const w = canvas.offsetWidth;
-  if (w === 0) return; /* jangan ubah ukuran jika wrapper masih tersembunyi */
+  if (w === 0) return;
 
   const tmp  = document.createElement('canvas');
   tmp.width  = canvas.width;
@@ -454,9 +568,6 @@ function canvasPoint(e) {
   };
 }
 
-/**
- * flushStrokeBatch - Mengirim batch titik stroke tiap ~60ms.
- */
 function flushStrokeBatch() {
   if (currentBatchPoints.length > 1) {
     sendStroke({
@@ -681,7 +792,10 @@ canvas.addEventListener('pointerenter', showCursor,  { passive: true });
 canvas.addEventListener('pointerleave', hideCursor,  { passive: true });
 
 /* ============================================================
- * Guess Box Handling (Penebak)
+ * [CLIENT - ACTION] Guess Box Handling (Penebak)
+ * ============================================================
+ * Penebak mengirim tebakan via event 'guess-attempt' ke Host
+ * tanpa melakukan validasi lokal.
  * ============================================================ */
 
 let feedbackTimer = 0;
@@ -716,10 +830,10 @@ guessForm.addEventListener('submit', async (e) => {
 
   guessInput.value = '';
 
-  /* Kirim tebakan ke chat room agar semua pemain (termasuk Host) melihatnya */
+  /* Kirim tebakan ke Host untuk divalidasi */
   try {
-    await sendChat(`[Tebakan]: ${raw}`);
-    showFeedback(`Tebakan terkirim: "${raw}"`, 'correct', 1500);
+    await sendGuessAttempt(raw);
+    showFeedback(`Memeriksa tebakan: "${raw}"…`, 'correct', 1200);
   } catch (err) {
     showFeedback(`Gagal kirim: ${err.message}`, 'wrong', 1800);
     triggerShake();
@@ -735,7 +849,7 @@ function appendChatMessage({ text, from, ts, self }) {
   li.className = `chat-msg ${self ? 'chat-msg--self' : 'chat-msg--peer'}`;
 
   const time  = new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-  const label = self ? 'Kamu' : `Peer ${from.slice(0, 4)}`;
+  const label = self ? 'Kamu' : (from === 'system' ? 'Sistem' : `Peer ${from.slice(0, 4)}`);
 
   li.innerHTML = `
     <div class="chat-bubble">${escapeHtml(text)}</div>

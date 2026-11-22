@@ -1,27 +1,32 @@
 /**
- * src/room.js — Room lifecycle + broadcast (chat, stroke, host-authoritative new-word)
+ * src/room.js — Room lifecycle + broadcast
  *
  * Fase 2a: Supabase Realtime Presence channel per room.
  * Fase 2b: broadcast 'chat' events.
  * Fase 2c: broadcast 'stroke' and 'clear' events real-time.
  * Fase 3a: broadcast 'new-word' (Host-authoritative: hanya hint/slot tersensor).
+ * Fase 3b: broadcast 'guess-attempt' (Client ke Host) & 'guess-result' (Host ke semua Client).
  *
  * Public API:
- *   joinRoom(roomCode)         → Promise<channel>; resolves on SUBSCRIBED
- *   leaveRoom()                → unsubscribes + cleans up
- *   sendChat(text)             → broadcast {type:'chat', text, from, ts}
- *   sendStroke(data)           → broadcast {type:'stroke', data, from, ts}
- *   sendClear()                → broadcast {type:'clear', from, ts}
- *   sendNewWord(hint)          → broadcast {type:'new-word', hint, from, ts}
- *   onStatusChange(fn)         → 'connecting'|'connected'|'disconnected'|'error'
- *   onMemberChange(fn)         → number of presence keys in room
- *   onChatMessage(fn)          → {text, from, ts, self} on every chat event
- *   onStroke(fn)               → {stroke, from, self} on stroke broadcast
- *   onClear(fn)                → {from, self} on clear broadcast
- *   onNewWord(fn)              → {hint, from, self} on new-word broadcast
- *   currentRoom()              → room code | null
- *   generateRoomCode()         → random 6-char code
- *   getSelfKey()               → string short id
+ *   joinRoom(roomCode)          → Promise<channel>; resolves on SUBSCRIBED
+ *   leaveRoom()                 → unsubscribes + cleans up
+ *   sendChat(text)              → broadcast {type:'chat', text, from, ts}
+ *   sendStroke(data)            → broadcast {type:'stroke', data, from, ts}
+ *   sendClear()                 → broadcast {type:'clear', from, ts}
+ *   sendNewWord(hint)           → broadcast {type:'new-word', hint, from, ts}
+ *   sendGuessAttempt(guess)     → broadcast {type:'guess-attempt', guess, from, ts}
+ *   sendGuessResult(result)     → broadcast {type:'guess-result', ...result, from, ts}
+ *   onStatusChange(fn)          → 'connecting'|'connected'|'disconnected'|'error'
+ *   onMemberChange(fn)          → number of presence keys in room
+ *   onChatMessage(fn)           → {text, from, ts, self} on every chat event
+ *   onStroke(fn)                → {stroke, from, self} on stroke broadcast
+ *   onClear(fn)                 → {from, self} on clear broadcast
+ *   onNewWord(fn)               → {hint, from, self} on new-word broadcast
+ *   onGuessAttempt(fn)          → {guess, from, ts, self} on guess-attempt
+ *   onGuessResult(fn)           → {isCorrect, guesserId, guess, word, from, ts, self}
+ *   currentRoom()               → room code | null
+ *   generateRoomCode()          → random 6-char code
+ *   getSelfKey()                → string short id
  */
 
 import { supabase } from './supabase.js';
@@ -54,6 +59,12 @@ const _clearListeners = [];
 /** @type {Array<(msg: {hint: any, from: string, ts: number, self: boolean}) => void>} */
 const _newWordListeners = [];
 
+/** @type {Array<(msg: {guess: string, from: string, ts: number, self: boolean}) => void>} */
+const _guessAttemptListeners = [];
+
+/** @type {Array<(msg: {isCorrect: boolean, guesserId: string, guess: string, word: string|null, from: string, ts: number, self: boolean}) => void>} */
+const _guessResultListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
@@ -76,12 +87,20 @@ export function onClear(fn) { _clearListeners.push(fn); }
 /** @param {(msg: {hint: any, from: string, ts: number, self: boolean}) => void} fn */
 export function onNewWord(fn) { _newWordListeners.push(fn); }
 
-function _emitStatus(s)   { _statusListeners.forEach((fn) => fn(s)); }
-function _emitMembers(n)  { _memberListeners.forEach((fn) => fn(n)); }
-function _emitChat(msg)   { _chatListeners.forEach((fn) => fn(msg)); }
-function _emitStroke(msg) { _strokeListeners.forEach((fn) => fn(msg)); }
-function _emitClear(msg)  { _clearListeners.forEach((fn) => fn(msg)); }
-function _emitNewWord(msg){ _newWordListeners.forEach((fn) => fn(msg)); }
+/** @param {(msg: {guess: string, from: string, ts: number, self: boolean}) => void} fn */
+export function onGuessAttempt(fn) { _guessAttemptListeners.push(fn); }
+
+/** @param {(msg: {isCorrect: boolean, guesserId: string, guess: string, word: string|null, from: string, ts: number, self: boolean}) => void} fn */
+export function onGuessResult(fn) { _guessResultListeners.push(fn); }
+
+function _emitStatus(s)        { _statusListeners.forEach((fn) => fn(s)); }
+function _emitMembers(n)       { _memberListeners.forEach((fn) => fn(n)); }
+function _emitChat(msg)        { _chatListeners.forEach((fn) => fn(msg)); }
+function _emitStroke(msg)      { _strokeListeners.forEach((fn) => fn(msg)); }
+function _emitClear(msg)       { _clearListeners.forEach((fn) => fn(msg)); }
+function _emitNewWord(msg)     { _newWordListeners.forEach((fn) => fn(msg)); }
+function _emitGuessAttempt(msg){ _guessAttemptListeners.forEach((fn) => fn(msg)); }
+function _emitGuessResult(msg) { _guessResultListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
  * Helpers
@@ -202,6 +221,31 @@ export function joinRoom(roomCode) {
         from: payload.from,
         ts:   payload.ts,
         self: payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: guess-attempt from Client to Host (Fase 3b) ---- */
+    _channel.on('broadcast', { event: 'guess-attempt' }, ({ payload }) => {
+      if (!payload) return;
+      _emitGuessAttempt({
+        guess: payload.guess,
+        from:  payload.from,
+        ts:    payload.ts,
+        self:  payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: guess-result from Host to all Clients (Fase 3b) ---- */
+    _channel.on('broadcast', { event: 'guess-result' }, ({ payload }) => {
+      if (!payload) return;
+      _emitGuessResult({
+        isCorrect: payload.isCorrect,
+        guesserId: payload.guesserId,
+        guess:     payload.guess,
+        word:      payload.word,
+        from:      payload.from,
+        ts:        payload.ts,
+        self:      payload.from === getSelfKey(),
       });
     });
 
@@ -339,5 +383,56 @@ export async function sendNewWord(hint) {
       from: getSelfKey(),
       ts:   Date.now(),
     },
+  });
+}
+
+/* ============================================================
+ * Broadcast: Guess Attempt & Result (Fase 3b)
+ * ============================================================ */
+
+/**
+ * sendGuessAttempt - Client sends a guess attempt to the room (to be evaluated by Host).
+ *
+ * @param {string} guess
+ */
+export async function sendGuessAttempt(guess) {
+  if (!_channel) return;
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'guess-attempt',
+    payload: {
+      guess,
+      from: getSelfKey(),
+      ts:   Date.now(),
+    },
+  });
+}
+
+/**
+ * sendGuessResult - Host broadcasts the evaluation result to all clients.
+ *
+ * @param {object} result
+ * @param {boolean} result.isCorrect
+ * @param {string} result.guesserId
+ * @param {string} result.guess
+ * @param {string|null} result.word
+ */
+export async function sendGuessResult(result) {
+  if (!_channel) return;
+
+  const payload = {
+    ...result,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  /* Host juga memicu listener result miliknya sendiri */
+  _emitGuessResult({ ...payload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'guess-result',
+    payload,
   });
 }
