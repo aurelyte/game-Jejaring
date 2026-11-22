@@ -65,6 +65,7 @@ import {
   setSavedRoomCode,
   getSavedIsHost,
   setSavedIsHost,
+  setPresenceGameStatus,
   getRoomMemberKeys,
   getMemberDetails,
   dbCreateRoom,
@@ -1036,7 +1037,7 @@ btnCreateRoom.addEventListener('click', async () => {
 
   try {
     const res = await dbCreateRoom(code, getSelfKey(), name);
-    if (res && res.success === false) {
+    if (res && res.success === false && !res.localOnly) {
       joinErrorEl.textContent = res.message || res.error || 'Gagal membuat room di server.';
       return;
     }
@@ -1048,8 +1049,16 @@ btnCreateRoom.addEventListener('click', async () => {
     showWaitingRoom(code, true);
     renderWaitingPlayerList([{ id: getSelfKey(), name, is_host: true, online: true }]);
   } catch (err) {
-    joinErrorEl.textContent = `Gagal membuat room: ${err.message}`;
-    console.error('[btnCreateRoom error]', err);
+    try {
+      await joinRoom(code, { name, isHost: true });
+      state.isHost = true;
+      roomCodeDisplay.textContent = code;
+      showWaitingRoom(code, true);
+      renderWaitingPlayerList([{ id: getSelfKey(), name, is_host: true, online: true }]);
+    } catch (innerErr) {
+      joinErrorEl.textContent = `Gagal membuat room: ${innerErr.message || err.message}`;
+      console.error('[btnCreateRoom error]', innerErr);
+    }
   } finally {
     btnCreateRoom.disabled    = false;
     btnCreateRoom.textContent = '✦ Buat Room';
@@ -1082,7 +1091,7 @@ joinForm.addEventListener('submit', async (e) => {
   try {
     const res = await dbJoinRoom(code, getSelfKey(), name);
 
-    if (res && res.success === false) {
+    if (res && res.success === false && !res.localOnly) {
       if (res.error === 'GAME_ALREADY_STARTED') {
         joinErrorEl.textContent = 'Game already started. You cannot join this room.';
       } else {
@@ -1098,7 +1107,20 @@ joinForm.addEventListener('submit', async (e) => {
     state.isHost = isReconnectingHost;
     roomCodeDisplay.textContent = code;
 
-    if (roomStatus === 'started') {
+    /* Cek apakah room sudah dimulai (via database atau presence metadata) */
+    const hostMember = getMemberDetails().find((m) => m.is_host);
+    const isRoomStarted = (roomStatus === 'started') || (hostMember && hostMember.game_status === 'started');
+
+    if (isRoomStarted && !isReconnectingHost) {
+      const savedCode = getSavedRoomCode();
+      if (savedCode !== code) {
+        await leaveRoom();
+        joinErrorEl.textContent = 'Game already started. You cannot join this room.';
+        return;
+      }
+    }
+
+    if (isRoomStarted) {
       /* Reconnecting player masuk langsung ke permainan aktif */
       showGame();
       renderGuesserWordSlots(null);
@@ -1168,7 +1190,7 @@ btnStartGame.addEventListener('click', async () => {
   /* Panggil RPC database dengan lock row SELECT ... FOR UPDATE */
   const res = await dbStartRoom(code, selfKey, 1);
 
-  if (res && res.success) {
+  if (res && res.success && res.first_drawer_id) {
     firstDrawerId = res.first_drawer_id;
     finalPlayers  = res.players || getMemberDetails();
   } else {
@@ -1185,6 +1207,9 @@ btnStartGame.addEventListener('click', async () => {
   }
 
   try {
+    /* Tandai status game 'started' di presence channel */
+    await setPresenceGameStatus('started');
+
     /* Broadcast event 'game-start' ke seluruh anggota di room */
     await sendGameStart({
       roomCode:      code,

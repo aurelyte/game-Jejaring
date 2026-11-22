@@ -296,11 +296,12 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
       for (const [key, presences] of Object.entries(state)) {
         const latest = presences[presences.length - 1] || {};
         memberMap.set(key, {
-          id:        key,
-          name:      latest.name || `Pemain ${key.slice(0, 4)}`,
-          is_host:   Boolean(latest.is_host),
-          joined_at: latest.joined_at || Date.now(),
-          online:    true,
+          id:          key,
+          name:        latest.name || `Pemain ${key.slice(0, 4)}`,
+          is_host:     Boolean(latest.is_host),
+          game_status: latest.game_status || 'waiting',
+          joined_at:   latest.joined_at || Date.now(),
+          online:      true,
         });
       }
       _memberDetails = Array.from(memberMap.values()).sort((a, b) => a.joined_at - b.joined_at);
@@ -466,10 +467,11 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
           _emitStatus('connected');
           try {
             await _channel.track({
-              id:        getSelfKey(),
-              name:      playerName,
-              is_host:   Boolean(isHost),
-              joined_at: Date.now(),
+              id:          getSelfKey(),
+              name:        playerName,
+              is_host:     Boolean(isHost),
+              game_status: 'waiting',
+              joined_at:   Date.now(),
             });
           } catch (_) {}
           resolve(_channel);
@@ -811,14 +813,60 @@ export async function sendGameStart(payload) {
 }
 
 /* ============================================================
- * Supabase Postgres Authoritative RPCs
+ * Supabase Postgres Authoritative RPCs & Fallback Handling
  * ============================================================ */
 
 /**
+ * isSchemaMissing - Mendeteksi apakah error berasal dari fungsi/tabel
+ * yang belum dieksekusi di Supabase SQL Editor (PGRST202/PGRST205/schema cache).
+ *
+ * @param {any} error
+ * @returns {boolean}
+ */
+export function isSchemaMissing(error) {
+  if (!error) return false;
+  const msg = (error.message || error.details || error.hint || String(error)).toLowerCase();
+  const code = (error.code || '').toUpperCase();
+  return (
+    code === 'PGRST202' ||
+    code === 'PGRST205' ||
+    code === '42883' ||
+    code === '42P01' ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the function') ||
+    msg.includes('could not find the table') ||
+    msg.includes('create_room_rpc') ||
+    msg.includes('join_room_rpc') ||
+    msg.includes('start_room_rpc') ||
+    msg.includes('get_room_state_rpc') ||
+    msg.includes('leave_room_rpc')
+  );
+}
+
+/**
+ * setPresenceGameStatus - Update status permainan pada kehadiran Realtime channel.
+ *
+ * @param {'waiting' | 'started' | 'finished'} status
+ */
+export async function setPresenceGameStatus(status) {
+  if (!_channel) return;
+  try {
+    await _channel.track({
+      id:          getSelfKey(),
+      name:        getPlayerName(),
+      is_host:     getSavedIsHost(),
+      game_status: status,
+      joined_at:   Date.now(),
+    });
+  } catch (_) {}
+}
+
+/**
  * dbCreateRoom - Create room in PostgreSQL.
+ * Jika RPC belum ada di database, jatuh ke mode Realtime Presence tanpa error.
  */
 export async function dbCreateRoom(roomCode, playerId, playerName) {
-  if (!supabase) return { success: true, localOnly: true };
+  if (!supabase) return { success: true, localOnly: true, status: 'waiting' };
 
   try {
     const { data, error } = await supabase.rpc('create_room_rpc', {
@@ -829,21 +877,29 @@ export async function dbCreateRoom(roomCode, playerId, playerName) {
     });
 
     if (error) {
+      if (isSchemaMissing(error)) {
+        console.info('[dbCreateRoom] Database RPC not deployed yet, falling back to Realtime Presence.');
+        return { success: true, localOnly: true, room_code: roomCode, status: 'waiting' };
+      }
       console.warn('[dbCreateRoom] RPC notice:', error.message);
       return { success: false, error: error.message };
     }
-    return data || { success: true };
+    return data || { success: true, status: 'waiting' };
   } catch (err) {
+    if (isSchemaMissing(err)) {
+      return { success: true, localOnly: true, room_code: roomCode, status: 'waiting' };
+    }
     console.warn('[dbCreateRoom] error:', err);
-    return { success: false, error: err.message };
+    return { success: true, localOnly: true, room_code: roomCode, status: 'waiting' };
   }
 }
 
 /**
  * dbJoinRoom - Join room with database transaction row-lock (SELECT ... FOR UPDATE).
+ * Jika RPC belum ada di database, jatuh ke mode Realtime Presence tanpa error.
  */
 export async function dbJoinRoom(roomCode, playerId, playerName) {
-  if (!supabase) return { success: true, localOnly: true };
+  if (!supabase) return { success: true, localOnly: true, status: 'waiting' };
 
   try {
     const { data, error } = await supabase.rpc('join_room_rpc', {
@@ -853,21 +909,29 @@ export async function dbJoinRoom(roomCode, playerId, playerName) {
     });
 
     if (error) {
+      if (isSchemaMissing(error)) {
+        console.info('[dbJoinRoom] Database RPC not deployed yet, falling back to Realtime Presence.');
+        return { success: true, localOnly: true, room_code: roomCode, status: 'waiting' };
+      }
       console.warn('[dbJoinRoom] RPC notice:', error.message);
       return { success: false, error: error.message };
     }
-    return data || { success: true };
+    return data || { success: true, status: 'waiting' };
   } catch (err) {
+    if (isSchemaMissing(err)) {
+      return { success: true, localOnly: true, room_code: roomCode, status: 'waiting' };
+    }
     console.warn('[dbJoinRoom] error:', err);
-    return { success: false, error: err.message };
+    return { success: true, localOnly: true, room_code: roomCode, status: 'waiting' };
   }
 }
 
 /**
  * dbStartRoom - Host starts room with database transaction row-lock & randomized drawer.
+ * Jika RPC belum ada di database, memicu fallback ke pemilihan acak in-memory.
  */
 export async function dbStartRoom(roomCode, hostPlayerId, minPlayers = 1) {
-  if (!supabase) return { success: false, error: 'Database Supabase tidak terhubung' };
+  if (!supabase) return { success: false, fallback: true, error: 'Database Supabase tidak terhubung' };
 
   try {
     const { data, error } = await supabase.rpc('start_room_rpc', {
@@ -877,13 +941,17 @@ export async function dbStartRoom(roomCode, hostPlayerId, minPlayers = 1) {
     });
 
     if (error) {
+      if (isSchemaMissing(error)) {
+        console.info('[dbStartRoom] Database RPC not deployed yet, fallback to in-memory randomized selection.');
+        return { success: false, fallback: true, error: error.message };
+      }
       console.warn('[dbStartRoom] RPC notice:', error.message);
-      return { success: false, error: error.message };
+      return { success: false, fallback: true, error: error.message };
     }
     return data;
   } catch (err) {
     console.warn('[dbStartRoom] error:', err);
-    return { success: false, error: err.message };
+    return { success: false, fallback: true, error: err.message };
   }
 }
 
