@@ -5,7 +5,8 @@
  * Fase 2b: broadcast 'chat' events.
  * Fase 2c: broadcast 'stroke' and 'clear' events real-time.
  * Fase 3a: broadcast 'new-word' (Host-authoritative: hanya hint/slot tersensor).
- * Fase 3b: broadcast 'guess-attempt' (Client ke Host) & 'guess-result' (Host ke semua Client).
+ * Fase 3b: broadcast 'guess-attempt' & 'guess-result'.
+ * Fase 3c: sistem giliran round-robin ('turn-change') + timer.
  *
  * Public API:
  *   joinRoom(roomCode)          → Promise<channel>; resolves on SUBSCRIBED
@@ -16,17 +17,20 @@
  *   sendNewWord(hint)           → broadcast {type:'new-word', hint, from, ts}
  *   sendGuessAttempt(guess)     → broadcast {type:'guess-attempt', guess, from, ts}
  *   sendGuessResult(result)     → broadcast {type:'guess-result', ...result, from, ts}
+ *   sendTurnChange(payload)     → broadcast {type:'turn-change', ...payload, from, ts}
  *   onStatusChange(fn)          → 'connecting'|'connected'|'disconnected'|'error'
- *   onMemberChange(fn)          → number of presence keys in room
- *   onChatMessage(fn)           → {text, from, ts, self} on every chat event
- *   onStroke(fn)                → {stroke, from, self} on stroke broadcast
- *   onClear(fn)                 → {from, self} on clear broadcast
- *   onNewWord(fn)               → {hint, from, self} on new-word broadcast
- *   onGuessAttempt(fn)          → {guess, from, ts, self} on guess-attempt
+ *   onMemberChange(fn)          → (count, keys)
+ *   onChatMessage(fn)           → {text, from, ts, self}
+ *   onStroke(fn)                → {stroke, from, self}
+ *   onClear(fn)                 → {from, self}
+ *   onNewWord(fn)               → {hint, from, self}
+ *   onGuessAttempt(fn)          → {guess, from, ts, self}
  *   onGuessResult(fn)           → {isCorrect, guesserId, guess, word, from, ts, self}
+ *   onTurnChange(fn)            → {drawerId, drawerWord, hint, duration, startedAt, from, ts, self}
  *   currentRoom()               → room code | null
  *   generateRoomCode()          → random 6-char code
  *   getSelfKey()                → string short id
+ *   getRoomMemberKeys()         → string[] list of presence keys
  */
 
 import { supabase } from './supabase.js';
@@ -41,10 +45,13 @@ let _channel = null;
 /** @type {string | null} */
 let _roomCode = null;
 
+/** @type {string[]} */
+let _presenceKeys = [];
+
 /** @type {Array<(status: string) => void>} */
 const _statusListeners = [];
 
-/** @type {Array<(count: number) => void>} */
+/** @type {Array<(count: number, keys: string[]) => void>} */
 const _memberListeners = [];
 
 /** @type {Array<(msg: {text: string, from: string, ts: number, self: boolean}) => void>} */
@@ -65,6 +72,9 @@ const _guessAttemptListeners = [];
 /** @type {Array<(msg: {isCorrect: boolean, guesserId: string, guess: string, word: string|null, from: string, ts: number, self: boolean}) => void>} */
 const _guessResultListeners = [];
 
+/** @type {Array<(msg: {drawerId: string, drawerWord: string, hint: any, duration: number, startedAt: number, from: string, ts: number, self: boolean}) => void>} */
+const _turnChangeListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
@@ -72,7 +82,7 @@ const _guessResultListeners = [];
 /** @param {(status: string) => void} fn */
 export function onStatusChange(fn) { _statusListeners.push(fn); }
 
-/** @param {(count: number) => void} fn */
+/** @param {(count: number, keys: string[]) => void} fn */
 export function onMemberChange(fn) { _memberListeners.push(fn); }
 
 /** @param {(msg: {text: string, from: string, ts: number, self: boolean}) => void} fn */
@@ -93,14 +103,18 @@ export function onGuessAttempt(fn) { _guessAttemptListeners.push(fn); }
 /** @param {(msg: {isCorrect: boolean, guesserId: string, guess: string, word: string|null, from: string, ts: number, self: boolean}) => void} fn */
 export function onGuessResult(fn) { _guessResultListeners.push(fn); }
 
-function _emitStatus(s)        { _statusListeners.forEach((fn) => fn(s)); }
-function _emitMembers(n)       { _memberListeners.forEach((fn) => fn(n)); }
-function _emitChat(msg)        { _chatListeners.forEach((fn) => fn(msg)); }
-function _emitStroke(msg)      { _strokeListeners.forEach((fn) => fn(msg)); }
-function _emitClear(msg)       { _clearListeners.forEach((fn) => fn(msg)); }
-function _emitNewWord(msg)     { _newWordListeners.forEach((fn) => fn(msg)); }
-function _emitGuessAttempt(msg){ _guessAttemptListeners.forEach((fn) => fn(msg)); }
-function _emitGuessResult(msg) { _guessResultListeners.forEach((fn) => fn(msg)); }
+/** @param {(msg: {drawerId: string, drawerWord: string, hint: any, duration: number, startedAt: number, from: string, ts: number, self: boolean}) => void} fn */
+export function onTurnChange(fn) { _turnChangeListeners.push(fn); }
+
+function _emitStatus(s)         { _statusListeners.forEach((fn) => fn(s)); }
+function _emitMembers(n, keys)  { _memberListeners.forEach((fn) => fn(n, keys)); }
+function _emitChat(msg)         { _chatListeners.forEach((fn) => fn(msg)); }
+function _emitStroke(msg)       { _strokeListeners.forEach((fn) => fn(msg)); }
+function _emitClear(msg)        { _clearListeners.forEach((fn) => fn(msg)); }
+function _emitNewWord(msg)      { _newWordListeners.forEach((fn) => fn(msg)); }
+function _emitGuessAttempt(msg) { _guessAttemptListeners.forEach((fn) => fn(msg)); }
+function _emitGuessResult(msg)  { _guessResultListeners.forEach((fn) => fn(msg)); }
+function _emitTurnChange(msg)   { _turnChangeListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
  * Helpers
@@ -121,6 +135,9 @@ export function generateRoomCode() {
 
 /** currentRoom - Active room code, or null. */
 export function currentRoom() { return _roomCode; }
+
+/** getRoomMemberKeys - List of current member presence keys. */
+export function getRoomMemberKeys() { return [..._presenceKeys]; }
 
 /**
  * getSelfKey - Stable per-tab random identifier.
@@ -175,10 +192,11 @@ export function joinRoom(roomCode) {
       }
     }, 10000);
 
-    /* ---- Presence: member count ---- */
+    /* ---- Presence: member count & keys ---- */
     _channel.on('presence', { event: 'sync' }, () => {
       const state = _channel.presenceState();
-      _emitMembers(Object.keys(state).length);
+      _presenceKeys = Object.keys(state).sort();
+      _emitMembers(_presenceKeys.length, _presenceKeys);
     });
 
     /* ---- Broadcast: chat messages ---- */
@@ -249,6 +267,21 @@ export function joinRoom(roomCode) {
       });
     });
 
+    /* ---- Broadcast: turn-change from Host to all Clients (Fase 3c) ---- */
+    _channel.on('broadcast', { event: 'turn-change' }, ({ payload }) => {
+      if (!payload) return;
+      _emitTurnChange({
+        drawerId:   payload.drawerId,
+        drawerWord: payload.drawerWord,
+        hint:       payload.hint,
+        duration:   payload.duration,
+        startedAt:  payload.startedAt,
+        from:       payload.from,
+        ts:         payload.ts,
+        self:       payload.from === getSelfKey(),
+      });
+    });
+
     /* ---- Subscribe → resolve/reject the Promise ---- */
     _channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
@@ -295,10 +328,11 @@ export async function leaveRoom() {
     await _channel.untrack();
     if (supabase) await supabase.removeChannel(_channel);
   } catch (_) { /* ignore cleanup errors */ }
-  _channel  = null;
-  _roomCode = null;
+  _channel      = null;
+  _roomCode     = null;
+  _presenceKeys = [];
   _emitStatus('disconnected');
-  _emitMembers(0);
+  _emitMembers(0, []);
 }
 
 /* ============================================================
@@ -310,7 +344,6 @@ export async function sendChat(text) {
 
   const payload = { text, from: getSelfKey(), ts: Date.now() };
 
-  /* optimistic: show own message immediately */
   _emitChat({ ...payload, self: true });
 
   await _channel.send({
@@ -364,14 +397,6 @@ export async function sendClear() {
  * Broadcast: New Word Hint (Fase 3a - Host Authoritative)
  * ============================================================ */
 
-/**
- * sendNewWord - Host broadcasts the masked word hint to all guessers.
- * Catatan: Kata asli TIDAK disiarkan, hanya pola dan jumlah huruf.
- *
- * @param {object} hint
- * @param {number} hint.length
- * @param {string[]} hint.slots
- */
 export async function sendNewWord(hint) {
   if (!_channel) return;
 
@@ -390,11 +415,6 @@ export async function sendNewWord(hint) {
  * Broadcast: Guess Attempt & Result (Fase 3b)
  * ============================================================ */
 
-/**
- * sendGuessAttempt - Client sends a guess attempt to the room (to be evaluated by Host).
- *
- * @param {string} guess
- */
 export async function sendGuessAttempt(guess) {
   if (!_channel) return;
 
@@ -409,15 +429,6 @@ export async function sendGuessAttempt(guess) {
   });
 }
 
-/**
- * sendGuessResult - Host broadcasts the evaluation result to all clients.
- *
- * @param {object} result
- * @param {boolean} result.isCorrect
- * @param {string} result.guesserId
- * @param {string} result.guess
- * @param {string|null} result.word
- */
 export async function sendGuessResult(result) {
   if (!_channel) return;
 
@@ -427,12 +438,44 @@ export async function sendGuessResult(result) {
     ts:   Date.now(),
   };
 
-  /* Host juga memicu listener result miliknya sendiri */
   _emitGuessResult({ ...payload, self: true });
 
   await _channel.send({
     type:    'broadcast',
     event:   'guess-result',
     payload,
+  });
+}
+
+/* ============================================================
+ * Broadcast: Turn Change (Fase 3c - Host Authoritative)
+ * ============================================================ */
+
+/**
+ * sendTurnChange - Host broadcasts turn change (drawer, duration, word).
+ *
+ * @param {object} payload
+ * @param {string} payload.drawerId
+ * @param {string} payload.drawerWord
+ * @param {object} payload.hint
+ * @param {number} payload.duration
+ * @param {number} payload.startedAt
+ */
+export async function sendTurnChange(payload) {
+  if (!_channel) return;
+
+  const fullPayload = {
+    ...payload,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  /* Host juga mengeksekusi listener turn change miliknya sendiri */
+  _emitTurnChange({ ...fullPayload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'turn-change',
+    payload: fullPayload,
   });
 }

@@ -566,6 +566,29 @@ h1 {
   color: #ef4444;
 }
 
+/* timer badge (Fase 3c) */
+.timer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #facc15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.timer-badge.is-urgent {
+  color: #fca5a5;
+  border-color: #ef4444;
+  background: #450a0a;
+}
+
 /* role badge: Host vs Guesser (Fase 3a) */
 .role-badge {
   padding: 0.25rem 0.65rem;

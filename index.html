@@ -59,7 +59,7 @@
            ===================================================== -->
       <div id="gameScreen" class="game-screen hidden">
 
-        <!-- status bar: room code + koneksi + jumlah pemain + status peran host/guesser -->
+        <!-- status bar: room code + koneksi + jumlah pemain + timer + status peran -->
         <div class="room-bar" id="roomBar">
           <span class="room-info">
             Room: <strong id="roomCodeDisplay">—</strong>
@@ -70,7 +70,11 @@
           <span class="conn-badge" id="connBadge" data-status="disconnected">
             ⬤ Menghubungkan…
           </span>
-          <!-- role badge: Host (Penggambar) vs Penebak -->
+          <!-- timer giliran (Fase 3c) -->
+          <span id="timerBadge" class="timer-badge" title="Sisa waktu giliran">
+            ⏱️ 60s
+          </span>
+          <!-- role badge: Host vs Guesser -->
           <span id="roleBadge" class="role-badge role-badge--host">
             👑 Host
           </span>
@@ -136,9 +140,9 @@
             <span class="word-label" id="wordLabel">Tebak kata:</span>
             <div id="wordSlots" class="word-slots" aria-hidden="true"></div>
             <span class="word-hint" id="wordHint"></span>
-            <!-- tombol ganti kata untuk Host -->
-            <button id="btnHostNextWord" class="btn-host-action hidden" title="Pilih kata soal baru">
-              🎲 Kata Baru
+            <!-- tombol ganti giliran untuk Host -->
+            <button id="btnHostNextWord" class="btn-host-action hidden" title="Host mengganti giliran ke pemain berikutnya">
+              ⏭️ Giliran Berikutnya
             </button>
           </div>
 

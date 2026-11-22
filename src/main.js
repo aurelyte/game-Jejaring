@@ -8,19 +8,20 @@
  * Fase 2c: broadcast stroke real-time dengan batching ~60ms.
  * Fase 3a: Host-authoritative word generation + kata soal tersensor.
  * Fase 3b: Guess divalidasi oleh Host ('guess-attempt' & 'guess-result').
+ * Fase 3c: Sistem giliran round-robin ('turn-change') + countdown timer 60s.
  *
  * Catatan Arsitektur (Host vs Client):
  *   [AUTHORITATIVE - HOST ONLY]:
- *     - Memilih kata rahasia dari WORD_LIST.
- *     - Menyimpan kata asli (plain text) hanya di memori lokal Host.
- *     - Menyiarkan event 'new-word' berisi hint ke room (kata asli TIDAK dikirim).
- *     - Menerima event 'guess-attempt' dari pemain, memvalidasi dengan kata asli.
- *     - Menyiarkan event 'guess-result' (status benar/salah, kata asli jika benar).
- *     - Menjadwalkan ronde berikutnya jika ada pemain yang menebak benar.
+ *     - Mengelola urutan pemain & giliran round-robin dari presence room.
+ *     - Memilih kata soal berikutnya dari WORD_LIST.
+ *     - Menyiarkan event 'turn-change' (menentukan siapa drawer berikutnya & durasi).
+ *     - Mengelola countdown timer 60s per ronde; jika habis, ganti giliran otomatis.
+ *     - Menerima dan memvalidasi 'guess-attempt', menyiarkan 'guess-result'.
  *   [CLIENT - RENDER ONLY]:
- *     - Mengirimkan 'guess-attempt' ke Host saat submit form tebak (tanpa validasi lokal).
- *     - Menerima 'guess-result' dari Host, lalu memperbarui skor, status kata, dan chat.
- *     - Menerima 'new-word' yang berisi hint tersensor (jumlah huruf dan slot underscore).
+ *     - Menerima 'turn-change': jika client adalah drawer, toolbar aktif; jika bukan,
+ *       canvas view-only (read-only) dan toolbar disembunyikan.
+ *     - Menampilkan sinkronisasi hitung mundur timer.
+ *     - Mengirim tebakan via 'guess-attempt' dan menerima hasil via 'guess-result'.
  */
 
 import {
@@ -33,6 +34,7 @@ import {
   sendNewWord,
   sendGuessAttempt,
   sendGuessResult,
+  sendTurnChange,
   onStatusChange,
   onMemberChange,
   onChatMessage,
@@ -41,7 +43,9 @@ import {
   onNewWord,
   onGuessAttempt,
   onGuessResult,
+  onTurnChange,
   getSelfKey,
+  getRoomMemberKeys,
 } from './room.js';
 
 /* ============================================================
@@ -52,6 +56,7 @@ import {
  * @type {{
  *   isHost: boolean,
  *   isDrawer: boolean,
+ *   currentDrawerId: string,
  *   color: string,
  *   size: number,
  *   drawing: boolean,
@@ -60,13 +65,14 @@ import {
  * }}
  */
 const state = {
-  isHost:   false, // [AUTHORITATIVE]: true jika membuat room, false jika join
-  isDrawer: false, // true jika saat ini punya izin menggambar di canvas
-  color:    '#f1f5f9',
-  size:     12,
-  drawing:  false,
-  lastX:    0,
-  lastY:    0,
+  isHost:          false, // [AUTHORITATIVE]: true jika membuat room, false jika join
+  isDrawer:        false, // true jika saat ini adalah giliran menggambar di canvas
+  currentDrawerId: '',
+  color:           '#f1f5f9',
+  size:            12,
+  drawing:         false,
+  lastX:           0,
+  lastY:           0,
 };
 
 /* Skor permainan tersinkronisasi berdasarkan 'guess-result' */
@@ -83,8 +89,6 @@ let isBatchStart       = false;
 /* ============================================================
  * [AUTHORITATIVE - HOST ONLY] Word Pool & Host State
  * ============================================================
- * Daftar kata dan kata rahasia yang aktif hanya disimpan dan dikelola
- * oleh Host. Penebak tidak memiliki akses ke plain text kata rahasia.
  */
 
 const WORD_LIST = [
@@ -96,9 +100,15 @@ const WORD_LIST = [
   'pizza', 'roti', 'kunci', 'jam', 'telepon',
 ];
 
-/** State yang HANYA diketahui dan dikelola oleh Host */
+/** State yang HANYA diketahui dan dikelola secara otoritatif oleh Host */
 const hostState = {
-  secretWord: '',
+  secretWord:         '',
+  playerOrder:        [], // urutan ID pemain round-robin
+  currentDrawerIndex: -1, // indeks drawer saat ini di playerOrder
+  turnDuration:       60, // 60 detik per giliran
+  timerInterval:      null,
+  secondsRemaining:   60,
+  isRoundEnding:      false,
 };
 
 /* ============================================================
@@ -108,10 +118,11 @@ const hostState = {
 const lobbyScreen      = /** @type {HTMLElement}       */ (document.getElementById('lobbyScreen'));
 const gameScreen       = /** @type {HTMLElement}       */ (document.getElementById('gameScreen'));
 
-/* Room bar & Role indicators */
+/* Room bar & Status indicators */
 const roomCodeDisplay  = /** @type {HTMLElement}       */ (document.getElementById('roomCodeDisplay'));
 const roomMembersEl    = /** @type {HTMLElement}       */ (document.getElementById('roomMembers'));
 const connBadgeEl      = /** @type {HTMLElement}       */ (document.getElementById('connBadge'));
+const timerBadgeEl     = /** @type {HTMLElement}       */ (document.getElementById('timerBadge'));
 const roleBadge        = /** @type {HTMLElement}       */ (document.getElementById('roleBadge'));
 const btnLeaveRoom     = /** @type {HTMLButtonElement}  */ (document.getElementById('btnLeaveRoom'));
 const drawingIndicator = /** @type {HTMLElement}       */ (document.getElementById('drawingIndicator'));
@@ -148,6 +159,10 @@ const chatForm         = /** @type {HTMLFormElement}   */ (document.getElementBy
 const chatInput        = /** @type {HTMLInputElement}  */ (document.getElementById('chatInput'));
 const chatList         = /** @type {HTMLOListElement}  */ (document.getElementById('chatList'));
 
+/* Timer lokal client */
+let localTimerInterval = null;
+let nextRoundTimer     = null;
+
 /* ============================================================
  * Screen Switching
  * ============================================================ */
@@ -162,13 +177,21 @@ function showGame() {
 
 async function showLobby() {
   await leaveRoom();
+
+  clearInterval(hostState.timerInterval);
+  clearInterval(localTimerInterval);
+  clearTimeout(nextRoundTimer);
+
   state.isHost            = false;
   state.isDrawer          = false;
+  state.currentDrawerId   = '';
   hostState.secretWord    = '';
+  hostState.playerOrder   = [];
   scoreState.correct      = 0;
   scoreState.wrong        = 0;
   scoreCorrectEl.textContent = '0';
   scoreWrongEl.textContent   = '0';
+
   gameScreen.classList.add('hidden');
   lobbyScreen.classList.remove('hidden');
   joinCodeInput.value     = '';
@@ -176,12 +199,15 @@ async function showLobby() {
 }
 
 /* ============================================================
- * [AUTHORITATIVE - HOST] Pemilihan Kata & Penyiaran Soal
+ * [AUTHORITATIVE - HOST ONLY] Round-Robin & Timer Giliran (Fase 3c)
  * ============================================================
- * Hanya dijalankan oleh Host:
- * 1. Memilih kata rahasia secara acak.
- * 2. Mengirimkan HANYA versi tersensor (underscore/slot & panjang) ke room.
- * 3. Menampilkan kata asli di layar Host sendiri.
+ * HANYA Host yang menjalankan fungsi ini:
+ * 1. Menentukan urutan pemain berdasarkan daftar presence di room.
+ * 2. Menghitung giliran round-robin (currentDrawerIndex).
+ * 3. Memilih kata baru dari WORD_LIST.
+ * 4. Menyiarkan event 'turn-change' ke seluruh client.
+ * 5. Menjalankan countdown timer 60 detik secara authoritative.
+ * 6. Jika waktu habis, Host menyiarkan kata asli dan ganti giliran.
  * ============================================================ */
 
 function pickWord() {
@@ -194,65 +220,109 @@ function pickWord() {
 }
 
 /**
- * hostPickAndBroadcastWord - [HOST AUTHORITATIVE]
- * Generate kata soal baru dan broadcast hint tersensor ke room.
+ * hostStartNextTurn - [HOST AUTHORITATIVE]
+ * Mulai giliran baru round-robin, tentukan drawer, dan siarkan 'turn-change'.
  */
-function hostPickAndBroadcastWord() {
+function hostStartNextTurn() {
   if (!state.isHost) return;
 
-  const word = pickWord();
-  hostState.secretWord = word;
+  clearInterval(hostState.timerInterval);
+  clearTimeout(nextRoundTimer);
+  hostState.isRoundEnding = false;
 
-  /* Bersihkan canvas host dan siarkan clear ke peer */
+  /* Sinkronkan daftar pemain dari presence room */
+  const members = getRoomMemberKeys();
+  if (members.length === 0) {
+    hostState.playerOrder = [getSelfKey()];
+  } else {
+    /* Pertahankan urutan yang ada, tambahkan anggota baru di akhir */
+    const existing = hostState.playerOrder.filter((k) => members.includes(k));
+    const brandNew = members.filter((k) => !existing.includes(k));
+    hostState.playerOrder = [...existing, ...brandNew];
+  }
+
+  if (hostState.playerOrder.length === 0) {
+    hostState.playerOrder = [getSelfKey()];
+  }
+
+  /* Giliran round-robin */
+  hostState.currentDrawerIndex = (hostState.currentDrawerIndex + 1) % hostState.playerOrder.length;
+  const currentDrawerId        = hostState.playerOrder[hostState.currentDrawerIndex];
+
+  /* Host memilih kata baru */
+  const word = pickWord();
+  hostState.secretWord       = word;
+  hostState.secondsRemaining = hostState.turnDuration;
+
+  /* Siapkan hint tersensor untuk penebak */
+  const cleanLen    = word.replace(/ /g, '').length;
+  const maskedSlots = Array.from(word).map((ch) => (ch === ' ' ? ' ' : '_'));
+  const hint        = { length: cleanLen, slots: maskedSlots };
+
+  /* Bersihkan canvas */
   clearCanvas();
   sendClear();
 
-  /* Siapkan hint tersensor (kata asli TIDAK dikirim) */
-  const cleanLen    = word.replace(/ /g, '').length;
-  const maskedSlots = Array.from(word).map((ch) => (ch === ' ' ? ' ' : '_'));
+  /* Siarkan event 'turn-change' ke seluruh client di room */
+  sendTurnChange({
+    drawerId:   currentDrawerId,
+    drawerWord: word, // plaintext hanya ditampilkan untuk client dengan getSelfKey() === drawerId
+    hint:       hint,
+    duration:   hostState.turnDuration,
+    startedAt:  Date.now(),
+  });
 
-  const hintPayload = {
-    length: cleanLen,
-    slots:  maskedSlots,
-  };
+  /* Host menjalankan countdown timer 60 detik secara authoritative */
+  hostState.timerInterval = setInterval(() => {
+    hostState.secondsRemaining -= 1;
 
-  /* Siarkan hint tersensor ke room */
-  sendNewWord(hintPayload);
-
-  /* Render kata asli di layar Host */
-  renderHostWordDisplay(word);
+    if (hostState.secondsRemaining <= 0) {
+      clearInterval(hostState.timerInterval);
+      hostHandleTurnTimeout();
+    }
+  }, 1000);
 }
 
-/** Render kata asli di layar Host */
-function renderHostWordDisplay(word) {
-  wordLabelEl.textContent = 'Kata Anda:';
-  wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(word)}</span>`;
-  wordHintEl.textContent  = '(Hanya Anda yang tahu — gambarlah kata ini!)';
+/**
+ * hostHandleTurnTimeout - [HOST AUTHORITATIVE]
+ * Dipanggil saat timer 60s habis. Mengumumkan kata asli dan ganti giliran.
+ */
+function hostHandleTurnTimeout() {
+  if (!state.isHost || hostState.isRoundEnding) return;
+  hostState.isRoundEnding = true;
+
+  const word = hostState.secretWord;
+
+  /* Siarkan hasil timeout: ronde selesai, buka kata asli untuk semua pemain */
+  sendGuessResult({
+    isCorrect: false,
+    guesserId: 'timeout',
+    guess:     '(Waktu Habis)',
+    word:      word,
+  });
+
+  /* Berpindah ke giliran berikutnya setelah jeda 3.5 detik */
+  clearTimeout(nextRoundTimer);
+  nextRoundTimer = setTimeout(() => {
+    if (state.isHost) {
+      hostStartNextTurn();
+    }
+  }, 3500);
 }
 
-/* Tombol ganti kata untuk Host */
+/* Tombol ganti giliran manual untuk Host */
 btnHostNextWord.addEventListener('click', () => {
   if (state.isHost) {
-    hostPickAndBroadcastWord();
+    hostStartNextTurn();
   }
 });
 
 /* ============================================================
- * [AUTHORITATIVE - HOST] Validasi Tebakan (Fase 3b)
- * ============================================================
- * HANYA Host yang menerima dan mengevaluasi 'guess-attempt':
- * - Mengecek apakah tebakan cocok (case-insensitive & trim)
- *   dengan kata asli yang dipegang host (hostState.secretWord).
- * - Menyiarkan event 'guess-result' ke semua client di room.
- * - Jika tebakan BENAR, Host menyertakan kata asli dalam broadcast
- *   dan menjadwalkan ronde baru (hostPickAndBroadcastWord).
+ * [AUTHORITATIVE - HOST ONLY] Validasi Tebakan (Fase 3b)
  * ============================================================ */
 
-let nextRoundTimer = null;
-
 onGuessAttempt(async ({ guess, from }) => {
-  /* HANYA Host yang memiliki wewenang memvalidasi tebakan */
-  if (!state.isHost) return;
+  if (!state.isHost || hostState.isRoundEnding) return;
   if (!hostState.secretWord) return;
 
   const cleanedGuess  = guess.trim().toLowerCase();
@@ -267,30 +337,57 @@ onGuessAttempt(async ({ guess, from }) => {
     word: isCorrect ? hostState.secretWord : null,
   });
 
-  /* Jika benar, Host otomatis memulai ronde baru setelah jeda */
+  /* Jika tebakan benar, Host mengakhiri ronde dan menjadwalkan giliran baru */
   if (isCorrect) {
+    hostState.isRoundEnding = true;
+    clearInterval(hostState.timerInterval);
+
     clearTimeout(nextRoundTimer);
     nextRoundTimer = setTimeout(() => {
       if (state.isHost) {
-        hostPickAndBroadcastWord();
+        hostStartNextTurn();
       }
-    }, 3200);
+    }, 3500);
   }
 });
 
 /* ============================================================
- * [CLIENT - RENDER ONLY] Penerima Soal Tersensor
+ * [CLIENT - RENDER ONLY] Penanganan 'turn-change' (Fase 3c)
  * ============================================================
- * Dijalankan oleh client Penebak saat menerima event 'new-word':
- * Penebak hanya menerima hint.slots (underscore) dan hint.length.
+ * Semua client memperbarui status drawer, toolbar, dan timer:
  * ============================================================ */
+
+function updateTimerDisplay(seconds) {
+  timerBadgeEl.textContent = `⏱️ ${seconds}s`;
+  if (seconds <= 10) {
+    timerBadgeEl.classList.add('is-urgent');
+  } else {
+    timerBadgeEl.classList.remove('is-urgent');
+  }
+}
+
+function startLocalTimer(duration, startedAt) {
+  clearInterval(localTimerInterval);
+
+  function tick() {
+    const elapsed   = Math.floor((Date.now() - startedAt) / 1000);
+    const remaining = Math.max(0, duration - elapsed);
+    updateTimerDisplay(remaining);
+    if (remaining <= 0) {
+      clearInterval(localTimerInterval);
+    }
+  }
+
+  tick();
+  localTimerInterval = setInterval(tick, 1000);
+}
 
 function renderGuesserWordSlots(hint) {
   wordLabelEl.textContent = 'Tebak kata:';
   wordSlotsEl.innerHTML   = '';
 
   if (!hint || !hint.slots) {
-    wordHintEl.textContent = '(Menunggu Host memilih kata...)';
+    wordHintEl.textContent = '(Menunggu giliran dimulai...)';
     return;
   }
 
@@ -303,63 +400,117 @@ function renderGuesserWordSlots(hint) {
   wordHintEl.textContent = `(${hint.length} huruf)`;
 }
 
-/* Event listener 'new-word' dari Supabase Realtime */
-onNewWord(({ hint, self }) => {
-  if (self) return; /* Host sudah merender kata aslinya secara lokal */
-
-  /* Penebak me-render slot tersensor */
-  renderGuesserWordSlots(hint);
+/* Event listener 'turn-change' dari Host */
+onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
   clearCanvas();
-  showFeedback('🎲 Host telah memilih kata baru! Perhatikan gambar dan tebak.', 'correct', 2500);
+  startLocalTimer(duration, startedAt);
+
+  state.currentDrawerId = drawerId;
+  const isMeDrawer      = (drawerId === getSelfKey());
+  state.isDrawer        = isMeDrawer;
+
+  if (isMeDrawer) {
+    /* [DRAWER]: Canvas aktif untuk menggambar, toolbar terbuka */
+    canvasWrapper.classList.remove('is-guesser');
+    hostGuessNotice.classList.remove('hidden');
+    hostGuessNotice.textContent = '🎨 Anda sedang menggambar! Biarkan pemain lain menebak.';
+    guessForm.classList.add('hidden');
+
+    /* Tampilkan kata rahasia yang harus digambar */
+    wordLabelEl.textContent = 'Kata untuk digambar:';
+    wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(drawerWord)}</span>`;
+    wordHintEl.textContent  = '(Hanya Anda yang tahu — gambarlah kata ini!)';
+
+    drawingIndicator.textContent = '🎨 Giliran Anda Menggambar! Gambarlah di canvas.';
+    drawingIndicator.className   = 'drawing-indicator';
+
+    showFeedback('🎨 Giliran Anda menggambar!', 'correct', 2500);
+  } else {
+    /* [GUESSER]: Canvas read-only, toolbar disembunyikan, form tebak aktif */
+    canvasWrapper.classList.add('is-guesser');
+    hostGuessNotice.classList.add('hidden');
+    guessForm.classList.remove('hidden');
+
+    /* Tampilkan slot tersensor */
+    renderGuesserWordSlots(hint);
+
+    const drawerLabel = (drawerId === getSelfKey() ? 'Kamu' : `Peer ${drawerId.slice(0, 4)}`);
+    drawingIndicator.textContent = `🔍 ${drawerLabel} sedang menggambar. Perhatikan canvas dan tebak di bawah!`;
+    drawingIndicator.className   = 'drawing-indicator';
+
+    showFeedback(`🎨 Giliran ${drawerLabel} menggambar!`, 'correct', 2500);
+  }
+
+  /* Tombol ganti giliran manual hanya tampil pada Host */
+  if (state.isHost) {
+    btnHostNextWord.classList.remove('hidden');
+  } else {
+    btnHostNextWord.classList.add('hidden');
+  }
 });
 
 /* ============================================================
  * [CLIENT - RENDER ONLY] Update UI Berdasarkan 'guess-result'
- * ============================================================
- * Semua client (Host dan Penebak) memperbarui UI secara sinkron
- * berdasarkan hasil validasi yang disiarkan oleh Host (bukan validasi sendiri):
  * ============================================================ */
 
 onGuessResult(({ isCorrect, guesserId, guess, word }) => {
   const isMyGuess   = (guesserId === getSelfKey());
   const guesserName = isMyGuess ? 'Kamu' : `Peer ${guesserId.slice(0, 4)}`;
 
+  /* Hentikan countdown timer lokal jika ronde berakhir */
+  if (isCorrect || guesserId === 'timeout') {
+    clearInterval(localTimerInterval);
+    updateTimerDisplay(0);
+  }
+
   if (isCorrect) {
-    /* 1. Update skor benar */
+    /* Update skor */
     scoreState.correct += 1;
     scoreCorrectEl.textContent = String(scoreState.correct);
 
-    /* 2. Tampilkan kata yang tertebak di layar untuk semua pemain */
+    /* Buka kata rahasia di layar semua pemain */
     wordLabelEl.textContent = 'Kata tertebak:';
     wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(word)}</span>`;
-    wordHintEl.textContent  = `(Ditebak oleh ${guesserName}! Menyiapkan ronde berikutnya...)`;
+    wordHintEl.textContent  = `(Ditebak oleh ${guesserName}! Giliran berikutnya segera dimulai...)`;
 
-    /* 3. Feedback visual */
+    /* Feedback */
     if (isMyGuess) {
       showFeedback(`🎉 BENAR! Kamu berhasil menebak: "${word}"`, 'correct', 3000);
     } else {
       showFeedback(`🎉 ${guesserName} berhasil menebak: "${word}"!`, 'correct', 3000);
     }
 
-    /* 4. Notifikasi publik di chat */
+    /* Notifikasi chat */
     appendChatMessage({
       text: `🏆 [TEBAKAN BENAR] ${guesserName} berhasil menebak: "${word}"!`,
       from: 'system',
       ts:   Date.now(),
       self: isMyGuess,
     });
+  } else if (guesserId === 'timeout') {
+    /* Waktu habis tanpa penebak yang tepat */
+    wordLabelEl.textContent = 'Waktu habis! Kata aslinya:';
+    wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(word)}</span>`;
+    wordHintEl.textContent  = '(Ronde berakhir karena waktu habis)';
+
+    showFeedback(`⏰ Waktu habis! Kata yang benar: "${word}"`, 'wrong', 3200);
+
+    appendChatMessage({
+      text: `⏰ [WAKTU HABIS] Tidak ada yang menebak tepat. Kata yang benar adalah: "${word}".`,
+      from: 'system',
+      ts:   Date.now(),
+      self: false,
+    });
   } else {
-    /* 1. Update skor coba lagi / salah */
+    /* Tebakan salah */
     scoreState.wrong += 1;
     scoreWrongEl.textContent = String(scoreState.wrong);
 
-    /* 2. Feedback jika tebakan salah berasal dari client ini */
     if (isMyGuess) {
       showFeedback(`❌ "${guess}" salah! Coba lagi.`, 'wrong', 1800);
       triggerShake();
     }
 
-    /* 3. Catat di chat sebagai tebakan */
     appendChatMessage({
       text: `[Tebakan]: ${guess} ❌`,
       from: guesserId,
@@ -370,43 +521,7 @@ onGuessResult(({ isCorrect, guesserId, guess, word }) => {
 });
 
 /* ============================================================
- * Role Management (Host vs Guesser)
- * ============================================================ */
-
-function updateRoleUI() {
-  if (state.isHost) {
-    /* [AUTHORITATIVE - HOST]: Host adalah Penggambar */
-    state.isDrawer = true;
-
-    roleBadge.textContent = '👑 Host (Penggambar)';
-    roleBadge.className   = 'role-badge role-badge--host';
-
-    canvasWrapper.classList.remove('is-guesser');
-    btnHostNextWord.classList.remove('hidden');
-    hostGuessNotice.classList.remove('hidden');
-    guessForm.classList.add('hidden');
-
-    drawingIndicator.textContent = '🎨 Anda adalah Host & Penggambar. Gambar kata rahasia Anda di canvas!';
-    drawingIndicator.className   = 'drawing-indicator';
-  } else {
-    /* [CLIENT - GUESSER]: Non-host adalah Penebak / Penonton */
-    state.isDrawer = false;
-
-    roleBadge.textContent = '🔍 Penebak';
-    roleBadge.className   = 'role-badge role-badge--guesser';
-
-    canvasWrapper.classList.add('is-guesser');
-    btnHostNextWord.classList.add('hidden');
-    hostGuessNotice.classList.add('hidden');
-    guessForm.classList.remove('hidden');
-
-    drawingIndicator.textContent = '🔍 Anda adalah Penebak. Perhatikan gambar dari Host dan tebak di bawah!';
-    drawingIndicator.className   = 'drawing-indicator';
-  }
-}
-
-/* ============================================================
- * Connection status & Presence listeners
+ * Connection Status & Presence Listeners
  * ============================================================ */
 
 const CONN_LABEL = {
@@ -421,28 +536,23 @@ onStatusChange((status) => {
   connBadgeEl.textContent    = CONN_LABEL[status] ?? status;
 });
 
-onMemberChange((count) => {
+onMemberChange((count, members) => {
   roomMembersEl.textContent = `👥 ${count} pemain`;
 
-  /* [AUTHORITATIVE - HOST]: Jika ada pemain baru masuk saat permainan
-     berlangsung, Host otomatis mengirim ulang hint tersensor agar pemain baru
-     langsung mendapatkan pola huruf terkini tanpa menunggu ronde berikutnya. */
-  if (state.isHost && hostState.secretWord) {
-    const cleanLen    = hostState.secretWord.replace(/ /g, '').length;
-    const maskedSlots = Array.from(hostState.secretWord).map((ch) => (ch === ' ' ? ' ' : '_'));
-    sendNewWord({
-      length: cleanLen,
-      slots:  maskedSlots,
-    });
+  /* [AUTHORITATIVE - HOST]: Update urutan pemain saat ada perubahan anggota */
+  if (state.isHost) {
+    const existing = hostState.playerOrder.filter((k) => members.includes(k));
+    const brandNew = members.filter((k) => !existing.includes(k));
+    hostState.playerOrder = [...existing, ...brandNew];
   }
 });
 
 /* ============================================================
- * Enter room helper (shared by create + join flows)
+ * Enter Room Helper
  * ============================================================ */
 
 /**
- * enterRoom - Masuk room dan set otoritas Host/Non-Host.
+ * enterRoom - Masuk room dan inisialisasi Host/Penebak.
  *
  * @param {string} code
  * @param {boolean} isHost - true jika pembuat room, false jika join
@@ -469,19 +579,27 @@ async function enterRoom(code, isHost = false) {
   try {
     await joinRoom(trimmed);
 
-    /* Set flag isHost di state lokal */
     state.isHost = isHost;
     roomCodeDisplay.textContent = trimmed;
 
+    /* Tampilkan role badge di status bar */
+    if (state.isHost) {
+      roleBadge.textContent = '👑 Host';
+      roleBadge.className   = 'role-badge role-badge--host';
+    } else {
+      roleBadge.textContent = '🔍 Pemain';
+      roleBadge.className   = 'role-badge role-badge--guesser';
+    }
+
     showGame();
-    updateRoleUI();
 
     if (state.isHost) {
-      /* [AUTHORITATIVE - HOST]: Host langsung memilih kata pertama */
-      hostPickAndBroadcastWord();
+      /* [AUTHORITATIVE - HOST]: Host menginisialisasi ronde giliran pertama */
+      hostStartNextTurn();
     } else {
-      /* [CLIENT - GUESSER]: Penebak menunggu hint dari Host */
+      /* Penebak menunggu event 'turn-change' dari Host */
       renderGuesserWordSlots(null);
+      canvasWrapper.classList.add('is-guesser');
     }
   } catch (err) {
     joinErrorEl.textContent = `Gagal terhubung: ${err.message}`;
@@ -497,22 +615,19 @@ async function enterRoom(code, isHost = false) {
 }
 
 /* ============================================================
- * Lobby events
+ * Lobby Events
  * ============================================================ */
 
-/* Pembuat room otomatis menjadi Host (isHost = true) */
 btnCreateRoom.addEventListener('click', () => {
   const code = generateRoomCode();
   enterRoom(code, true);
 });
 
-/* Pemain yang join bukan Host (isHost = false) */
 joinForm.addEventListener('submit', (e) => {
   e.preventDefault();
   enterRoom(joinCodeInput.value, false);
 });
 
-/* Force uppercase pada input kode */
 joinCodeInput.addEventListener('input', () => {
   const sel = joinCodeInput.selectionStart;
   joinCodeInput.value = joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -522,7 +637,7 @@ joinCodeInput.addEventListener('input', () => {
 btnLeaveRoom.addEventListener('click', showLobby);
 
 /* ============================================================
- * Canvas sizing — maintain 16:9, fill wrapper width
+ * Canvas Sizing
  * ============================================================ */
 
 function resize() {
@@ -583,7 +698,7 @@ function flushStrokeBatch() {
 }
 
 function startDraw(e) {
-  /* Hanya pemain dengan izin drawer (Host) yang bisa menggambar */
+  /* HANYA drawer yang diizinkan menggambar */
   if (!state.isDrawer) return;
 
   e.preventDefault();
@@ -653,19 +768,18 @@ function stopDraw(e) {
 }
 
 /* ============================================================
- * Peer Stroke Rendering (Client me-render stroke dari Host)
+ * Peer Stroke Rendering (Render goresan dari Drawer aktif)
  * ============================================================ */
 
 let peerDrawingTimeout = null;
 
 function showPeerDrawing(from) {
   drawingIndicator.classList.add('is-peer-drawing');
-  drawingIndicator.textContent = `🎨 Host (${from.slice(0, 4)}) sedang menggambar...`;
+  drawingIndicator.textContent = `🎨 Peer ${from.slice(0, 4)} sedang menggambar...`;
 
   clearTimeout(peerDrawingTimeout);
   peerDrawingTimeout = setTimeout(() => {
     drawingIndicator.classList.remove('is-peer-drawing');
-    updateRoleUI();
   }, 1600);
 }
 
@@ -709,8 +823,7 @@ onStroke(({ stroke, from, self }) => {
 onClear(({ from, self }) => {
   if (self) return;
   clearCanvas();
-  drawingIndicator.textContent = `🗑 Canvas dibersihkan oleh ${from.slice(0, 4)}`;
-  setTimeout(updateRoleUI, 2000);
+  drawingIndicator.textContent = `🗑 Canvas dibersihkan oleh Peer ${from.slice(0, 4)}`;
 });
 
 /* ============================================================
@@ -777,6 +890,7 @@ function clearCanvas() {
 }
 
 clearBtn.addEventListener('click', () => {
+  if (!state.isDrawer) return;
   clearCanvas();
   sendClear();
 });
@@ -792,10 +906,7 @@ canvas.addEventListener('pointerenter', showCursor,  { passive: true });
 canvas.addEventListener('pointerleave', hideCursor,  { passive: true });
 
 /* ============================================================
- * [CLIENT - ACTION] Guess Box Handling (Penebak)
- * ============================================================
- * Penebak mengirim tebakan via event 'guess-attempt' ke Host
- * tanpa melakukan validasi lokal.
+ * [CLIENT - ACTION] Guess Box Handling
  * ============================================================ */
 
 let feedbackTimer = 0;
@@ -822,7 +933,6 @@ function triggerShake() {
   }, { once: true });
 }
 
-/* Saat penebak mengirim tebakan di form tebak */
 guessForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const raw = guessInput.value.trim();
@@ -830,7 +940,6 @@ guessForm.addEventListener('submit', async (e) => {
 
   guessInput.value = '';
 
-  /* Kirim tebakan ke Host untuk divalidasi */
   try {
     await sendGuessAttempt(raw);
     showFeedback(`Memeriksa tebakan: "${raw}"…`, 'correct', 1200);
@@ -898,7 +1007,6 @@ chatForm.addEventListener('submit', async (e) => {
 function init() {
   resize();
   applyCtxDefaults();
-  updateRoleUI();
 }
 
 window.addEventListener('resize', resize);
