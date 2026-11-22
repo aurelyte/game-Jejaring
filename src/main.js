@@ -26,6 +26,7 @@
 
 import {
   generateRoomCode,
+  currentRoom,
   joinRoom,
   leaveRoom,
   sendChat,
@@ -38,8 +39,12 @@ import {
   sendPowerupRequest,
   sendPowerupApplied,
   sendPowerupEnd,
+  sendPlayerJoined,
+  sendPlayerLeft,
+  sendGameStart,
   onStatusChange,
   onMemberChange,
+  onMemberPresence,
   onChatMessage,
   onStroke,
   onClear,
@@ -50,8 +55,23 @@ import {
   onPowerupRequest,
   onPowerupApplied,
   onPowerupEnd,
+  onPlayerJoined,
+  onPlayerLeft,
+  onGameStart,
   getSelfKey,
+  getPlayerName,
+  setPlayerName,
+  getSavedRoomCode,
+  setSavedRoomCode,
+  getSavedIsHost,
+  setSavedIsHost,
   getRoomMemberKeys,
+  getMemberDetails,
+  dbCreateRoom,
+  dbJoinRoom,
+  dbStartRoom,
+  dbGetRoomState,
+  dbLeaveRoom,
 } from './room.js';
 
 /* ============================================================
@@ -139,6 +159,7 @@ const hostState = {
  * ============================================================ */
 
 const lobbyScreen      = /** @type {HTMLElement}       */ (document.getElementById('lobbyScreen'));
+const waitingScreen    = /** @type {HTMLElement}       */ (document.getElementById('waitingScreen'));
 const gameScreen       = /** @type {HTMLElement}       */ (document.getElementById('gameScreen'));
 
 /* Room bar & Status indicators */
@@ -152,11 +173,23 @@ const drawingIndicator = /** @type {HTMLElement}       */ (document.getElementBy
 const canvasWrapper    = /** @type {HTMLElement}       */ (document.getElementById('canvasWrapper'));
 
 /* Lobby inputs */
+const playerNameInput  = /** @type {HTMLInputElement}   */ (document.getElementById('playerNameInput'));
 const btnCreateRoom    = /** @type {HTMLButtonElement}  */ (document.getElementById('btnCreateRoom'));
 const btnJoinRoom      = /** @type {HTMLButtonElement}  */ (document.getElementById('btnJoinRoom'));
 const joinForm         = /** @type {HTMLFormElement}    */ (document.getElementById('joinForm'));
 const joinCodeInput    = /** @type {HTMLInputElement}   */ (document.getElementById('joinCodeInput'));
 const joinErrorEl      = /** @type {HTMLParagraphElement}*/ (document.getElementById('joinError'));
+
+/* Waiting Room elements */
+const waitingRoomCode         = /** @type {HTMLElement}       */ (document.getElementById('waitingRoomCode'));
+const btnCopyCode             = /** @type {HTMLButtonElement} */ (document.getElementById('btnCopyCode'));
+const waitingPlayerCountBadge = /** @type {HTMLElement}       */ (document.getElementById('waitingPlayerCountBadge'));
+const waitingPlayerList       = /** @type {HTMLUListElement}  */ (document.getElementById('waitingPlayerList'));
+const hostWaitingControls     = /** @type {HTMLElement}       */ (document.getElementById('hostWaitingControls'));
+const btnStartGame            = /** @type {HTMLButtonElement} */ (document.getElementById('btnStartGame'));
+const nonHostWaitingNotice    = /** @type {HTMLElement}       */ (document.getElementById('nonHostWaitingNotice'));
+const waitingError            = /** @type {HTMLElement}       */ (document.getElementById('waitingError'));
+const btnLeaveWaiting         = /** @type {HTMLButtonElement} */ (document.getElementById('btnLeaveWaiting'));
 
 /* Canvas & Toolbar */
 const canvas           = /** @type {HTMLCanvasElement}  */ (document.getElementById('drawCanvas'));
@@ -196,14 +229,66 @@ let localTimerInterval = null;
 let nextRoundTimer     = null;
 
 /* ============================================================
- * Screen Switching
+ * Screen Switching & Waiting Room UI
  * ============================================================ */
 
 function showGame() {
   lobbyScreen.classList.add('hidden');
+  waitingScreen.classList.add('hidden');
   gameScreen.classList.remove('hidden');
   requestAnimationFrame(() => {
     resize();
+  });
+}
+
+function showWaitingRoom(code, isHost) {
+  lobbyScreen.classList.add('hidden');
+  gameScreen.classList.add('hidden');
+  waitingScreen.classList.remove('hidden');
+
+  waitingRoomCode.textContent = code;
+  waitingError.textContent = '';
+
+  if (isHost) {
+    hostWaitingControls.classList.remove('hidden');
+    nonHostWaitingNotice.classList.add('hidden');
+    roleBadge.textContent = '👑 Host';
+    roleBadge.className = 'role-badge role-badge--host';
+  } else {
+    hostWaitingControls.classList.add('hidden');
+    nonHostWaitingNotice.classList.remove('hidden');
+    roleBadge.textContent = '🔍 Pemain';
+    roleBadge.className = 'role-badge role-badge--guesser';
+  }
+}
+
+function renderWaitingPlayerList(members) {
+  if (!waitingPlayerList) return;
+
+  const list = (Array.isArray(members) && members.length > 0)
+    ? members
+    : [{ id: getSelfKey(), name: getPlayerName(), is_host: state.isHost, online: true }];
+
+  waitingPlayerCountBadge.textContent = `👥 ${list.length}/8 Pemain`;
+  waitingPlayerList.innerHTML = '';
+
+  list.forEach((p) => {
+    const li = document.createElement('li');
+    li.className = 'waiting-player-item';
+
+    const isSelf = (p.id === getSelfKey());
+    const initial = (p.name || 'P').trim().charAt(0).toUpperCase() || 'P';
+
+    li.innerHTML = `
+      <div class="waiting-avatar" aria-hidden="true">${escapeHtml(initial)}</div>
+      <div class="waiting-player-info">
+        <span class="waiting-player-name">${escapeHtml(p.name || 'Pemain')}</span>
+        ${p.is_host ? '<span class="badge-host">👑 HOST</span>' : ''}
+        ${isSelf ? '<span class="badge-you">(Kamu)</span>' : ''}
+      </div>
+      <span class="online-dot" title="Online">Online</span>
+    `;
+    waitingPlayerList.appendChild(li);
   });
 }
 
@@ -239,10 +324,12 @@ async function showLobby() {
   scoreCorrectEl.textContent = '0';
   scoreWrongEl.textContent   = '0';
 
+  waitingScreen.classList.add('hidden');
   gameScreen.classList.add('hidden');
   lobbyScreen.classList.remove('hidden');
   joinCodeInput.value     = '';
   joinErrorEl.textContent = '';
+  waitingError.textContent = '';
 }
 
 /* ============================================================
@@ -267,10 +354,15 @@ function pickWord() {
 }
 
 /**
- * hostStartNextTurn - [HOST AUTHORITATIVE]
- * Mulai giliran baru round-robin, tentukan drawer, dan siarkan 'turn-change'.
+ * hostStartTurnForDrawer - [HOST AUTHORITATIVE]
+ * Mulai ronde giliran untuk penggambar tertentu (drawerId).
+ * Digunakan untuk:
+ * - Penggambar pertama hasil undian acak (Randomized First Drawer).
+ * - Penggambar ronde selanjutnya pada siklus round-robin.
+ *
+ * @param {string} drawerId
  */
-function hostStartNextTurn() {
+function hostStartTurnForDrawer(drawerId) {
   if (!state.isHost) return;
 
   clearInterval(hostState.timerInterval);
@@ -283,24 +375,7 @@ function hostStartNextTurn() {
   hostState.usedRevealPlayers.clear();
   hostState.usedFreezePlayers.clear();
 
-  /* Sinkronkan daftar pemain dari presence room */
-  const members = getRoomMemberKeys();
-  if (members.length === 0) {
-    hostState.playerOrder = [getSelfKey()];
-  } else {
-    /* Pertahankan urutan yang ada, tambahkan anggota baru di akhir */
-    const existing = hostState.playerOrder.filter((k) => members.includes(k));
-    const brandNew = members.filter((k) => !existing.includes(k));
-    hostState.playerOrder = [...existing, ...brandNew];
-  }
-
-  if (hostState.playerOrder.length === 0) {
-    hostState.playerOrder = [getSelfKey()];
-  }
-
-  /* Giliran round-robin */
-  hostState.currentDrawerIndex = (hostState.currentDrawerIndex + 1) % hostState.playerOrder.length;
-  const currentDrawerId        = hostState.playerOrder[hostState.currentDrawerIndex];
+  const currentDrawerId = drawerId || getSelfKey();
 
   /* Host memilih kata baru */
   const word = pickWord();
@@ -335,6 +410,35 @@ function hostStartNextTurn() {
       hostHandleTurnTimeout();
     }
   }, 1000);
+}
+
+/**
+ * hostStartNextTurn - [HOST AUTHORITATIVE]
+ * Mulai giliran baru round-robin, tentukan drawer, dan siarkan 'turn-change'.
+ */
+function hostStartNextTurn() {
+  if (!state.isHost) return;
+
+  /* Sinkronkan daftar pemain dari presence room */
+  const members = getRoomMemberKeys();
+  if (members.length === 0) {
+    hostState.playerOrder = [getSelfKey()];
+  } else {
+    /* Pertahankan urutan yang ada, tambahkan anggota baru di akhir */
+    const existing = hostState.playerOrder.filter((k) => members.includes(k));
+    const brandNew = members.filter((k) => !existing.includes(k));
+    hostState.playerOrder = [...existing, ...brandNew];
+  }
+
+  if (hostState.playerOrder.length === 0) {
+    hostState.playerOrder = [getSelfKey()];
+  }
+
+  /* Giliran round-robin */
+  hostState.currentDrawerIndex = (hostState.currentDrawerIndex + 1) % hostState.playerOrder.length;
+  const nextDrawerId           = hostState.playerOrder[hostState.currentDrawerIndex];
+
+  hostStartTurnForDrawer(nextDrawerId);
 }
 
 /**
@@ -844,19 +948,120 @@ onMemberChange((count, members) => {
 });
 
 /* ============================================================
- * Enter Room Helper
+ * Waiting Room & Presence Listeners
  * ============================================================ */
 
-/**
- * enterRoom - Masuk room dan inisialisasi Host/Penebak.
- *
- * @param {string} code
- * @param {boolean} isHost - true jika pembuat room, false jika join
- */
-async function enterRoom(code, isHost = false) {
-  const trimmed = code.trim().toUpperCase();
+onMemberPresence((members) => {
+  renderWaitingPlayerList(members);
+});
 
-  if (!/^[A-Z0-9]{6}$/.test(trimmed)) {
+onPlayerJoined(({ player, from, self }) => {
+  if (self) return;
+  appendChatMessage({
+    text: `👋 ${player?.name || `Peer ${from.slice(0, 4)}`} bergabung ke room.`,
+    from: 'system',
+    ts:   Date.now(),
+    self: false,
+  });
+});
+
+onPlayerLeft(({ playerId, from, self }) => {
+  if (self) return;
+  appendChatMessage({
+    text: `🚪 Pemain ${playerId.slice(0, 4)} keluar dari room.`,
+    from: 'system',
+    ts:   Date.now(),
+    self: false,
+  });
+});
+
+/* ============================================================
+ * [TRANSITION] Game Start Listener (Waiting Room -> Game)
+ * ============================================================ */
+
+onGameStart(({ roomCode, players, firstDrawerId, startedAt }) => {
+  roomCodeDisplay.textContent = roomCode;
+  showGame();
+
+  state.currentDrawerId = firstDrawerId;
+  const isMeDrawer      = (firstDrawerId === getSelfKey());
+  state.isDrawer        = isMeDrawer;
+
+  if (state.isHost) {
+    /* Siapkan urutan pemain untuk round-robin berikutnya */
+    let playerIds = [];
+    if (Array.isArray(players) && players.length > 0) {
+      playerIds = players.map((p) => p.player_id || p.id).filter(Boolean);
+    }
+    if (playerIds.length === 0) {
+      playerIds = getRoomMemberKeys();
+    }
+    if (!playerIds.includes(firstDrawerId)) {
+      playerIds.unshift(firstDrawerId);
+    }
+    if (playerIds.length === 0) {
+      playerIds = [getSelfKey()];
+    }
+
+    hostState.playerOrder        = playerIds;
+    hostState.currentDrawerIndex = hostState.playerOrder.indexOf(firstDrawerId);
+    if (hostState.currentDrawerIndex === -1) {
+      hostState.currentDrawerIndex = 0;
+    }
+
+    /* Host memulai ronde pertama dengan drawer yang terpilih secara acak */
+    hostStartTurnForDrawer(firstDrawerId);
+  } else {
+    /* Penebak menunggu event 'turn-change' dari Host */
+    renderGuesserWordSlots(null);
+    canvasWrapper.classList.add('is-guesser');
+  }
+});
+
+/* ============================================================
+ * Lobby & Waiting Room Actions
+ * ============================================================ */
+
+/* Buat Room Baru */
+btnCreateRoom.addEventListener('click', async () => {
+  const name = playerNameInput.value.trim() || getPlayerName();
+  setPlayerName(name);
+  playerNameInput.value = name;
+
+  const code = generateRoomCode();
+
+  btnCreateRoom.disabled    = true;
+  btnCreateRoom.textContent = '✦ Menyiapkan…';
+  joinErrorEl.textContent   = '';
+
+  try {
+    const res = await dbCreateRoom(code, getSelfKey(), name);
+    if (res && res.success === false) {
+      joinErrorEl.textContent = res.message || res.error || 'Gagal membuat room di server.';
+      return;
+    }
+
+    await joinRoom(code, { name, isHost: true });
+    state.isHost = true;
+    roomCodeDisplay.textContent = code;
+
+    showWaitingRoom(code, true);
+    renderWaitingPlayerList([{ id: getSelfKey(), name, is_host: true, online: true }]);
+  } catch (err) {
+    joinErrorEl.textContent = `Gagal membuat room: ${err.message}`;
+    console.error('[btnCreateRoom error]', err);
+  } finally {
+    btnCreateRoom.disabled    = false;
+    btnCreateRoom.textContent = '✦ Buat Room';
+  }
+});
+
+/* Masuk Room */
+joinForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const code = joinCodeInput.value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(code)) {
     joinErrorEl.textContent = 'Kode harus 6 karakter (huruf/angka).';
     joinCodeInput.classList.add('error');
     return;
@@ -865,71 +1070,137 @@ async function enterRoom(code, isHost = false) {
   joinErrorEl.textContent = '';
   joinCodeInput.classList.remove('error');
 
-  btnCreateRoom.disabled    = true;
-  btnCreateRoom.textContent = '✦ Menghubungkan…';
+  const name = playerNameInput.value.trim() || getPlayerName();
+  setPlayerName(name);
+  playerNameInput.value = name;
+
   if (btnJoinRoom) {
     btnJoinRoom.disabled    = true;
     btnJoinRoom.textContent = '…';
   }
 
   try {
-    await joinRoom(trimmed);
+    const res = await dbJoinRoom(code, getSelfKey(), name);
 
-    state.isHost = isHost;
-    roomCodeDisplay.textContent = trimmed;
-
-    /* Tampilkan role badge di status bar */
-    if (state.isHost) {
-      roleBadge.textContent = '👑 Host';
-      roleBadge.className   = 'role-badge role-badge--host';
-    } else {
-      roleBadge.textContent = '🔍 Pemain';
-      roleBadge.className   = 'role-badge role-badge--guesser';
+    if (res && res.success === false) {
+      if (res.error === 'GAME_ALREADY_STARTED') {
+        joinErrorEl.textContent = 'Game already started. You cannot join this room.';
+      } else {
+        joinErrorEl.textContent = res.message || res.error || 'Gagal masuk ke room.';
+      }
+      return;
     }
 
-    showGame();
+    const roomStatus         = res?.status || 'waiting';
+    const isReconnectingHost = Boolean(res?.is_host);
 
-    if (state.isHost) {
-      /* [AUTHORITATIVE - HOST]: Host menginisialisasi ronde giliran pertama */
-      hostStartNextTurn();
-    } else {
-      /* Penebak menunggu event 'turn-change' dari Host */
+    await joinRoom(code, { name, isHost: isReconnectingHost });
+    state.isHost = isReconnectingHost;
+    roomCodeDisplay.textContent = code;
+
+    if (roomStatus === 'started') {
+      /* Reconnecting player masuk langsung ke permainan aktif */
+      showGame();
       renderGuesserWordSlots(null);
       canvasWrapper.classList.add('is-guesser');
+    } else {
+      /* Masuk ke Waiting Room */
+      showWaitingRoom(code, isReconnectingHost);
+      await sendPlayerJoined({ id: getSelfKey(), name, is_host: isReconnectingHost });
     }
   } catch (err) {
-    joinErrorEl.textContent = `Gagal terhubung: ${err.message}`;
-    console.error('[enterRoom]', err);
+    joinErrorEl.textContent = `Gagal masuk: ${err.message}`;
+    console.error('[joinForm error]', err);
   } finally {
-    btnCreateRoom.disabled    = false;
-    btnCreateRoom.textContent = '✦ Buat Room';
     if (btnJoinRoom) {
       btnJoinRoom.disabled    = false;
       btnJoinRoom.textContent = 'Masuk →';
     }
   }
-}
-
-/* ============================================================
- * Lobby Events
- * ============================================================ */
-
-btnCreateRoom.addEventListener('click', () => {
-  const code = generateRoomCode();
-  enterRoom(code, true);
 });
 
-joinForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  enterRoom(joinCodeInput.value, false);
-});
-
+/* Input sanitizer kode room */
 joinCodeInput.addEventListener('input', () => {
   const sel = joinCodeInput.selectionStart;
   joinCodeInput.value = joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   joinCodeInput.setSelectionRange(sel, sel);
 });
 
+/* Tombol Salin Kode Room */
+btnCopyCode.addEventListener('click', async () => {
+  const code = waitingRoomCode.textContent.trim();
+  if (!code || code === '—') return;
+
+  try {
+    await navigator.clipboard.writeText(code);
+  } catch (_) {
+    const input = document.createElement('input');
+    input.value = code;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    document.body.removeChild(input);
+  }
+
+  const orig = btnCopyCode.textContent;
+  btnCopyCode.textContent = '✓ Tersalin!';
+  btnCopyCode.classList.add('copied');
+  setTimeout(() => {
+    btnCopyCode.textContent = orig;
+    btnCopyCode.classList.remove('copied');
+  }, 1800);
+});
+
+/* Tombol Start Game (Khusus Host) — Menjalankan Undian Acak First Drawer */
+btnStartGame.addEventListener('click', async () => {
+  if (!state.isHost) return;
+
+  btnStartGame.disabled    = true;
+  btnStartGame.textContent = '🚀 Memulai Permainan…';
+  waitingError.textContent = '';
+
+  const code    = currentRoom() || waitingRoomCode.textContent.trim();
+  const selfKey = getSelfKey();
+
+  let firstDrawerId = null;
+  let finalPlayers  = [];
+
+  /* Panggil RPC database dengan lock row SELECT ... FOR UPDATE */
+  const res = await dbStartRoom(code, selfKey, 1);
+
+  if (res && res.success) {
+    firstDrawerId = res.first_drawer_id;
+    finalPlayers  = res.players || getMemberDetails();
+  } else {
+    /* Fallback in-memory jika schema database belum di-apply di Supabase SQL Editor */
+    console.warn('[Start Game] RPC fallback to in-memory randomized selection:', res?.error);
+    const presenceMembers = getMemberDetails();
+    const candidateList   = presenceMembers.length > 0
+      ? presenceMembers
+      : [{ id: selfKey, name: getPlayerName(), is_host: true }];
+
+    const randomPick = candidateList[Math.floor(Math.random() * candidateList.length)];
+    firstDrawerId = randomPick.id;
+    finalPlayers  = candidateList;
+  }
+
+  try {
+    /* Broadcast event 'game-start' ke seluruh anggota di room */
+    await sendGameStart({
+      roomCode:      code,
+      players:       finalPlayers,
+      firstDrawerId,
+      startedAt:     Date.now(),
+    });
+  } catch (err) {
+    console.error('[sendGameStart error]', err);
+    waitingError.textContent = `Gagal memulai game: ${err.message}`;
+    btnStartGame.disabled    = false;
+    btnStartGame.textContent = '🚀 Mulai Permainan';
+  }
+});
+
+btnLeaveWaiting.addEventListener('click', showLobby);
 btnLeaveRoom.addEventListener('click', showLobby);
 
 /* ============================================================
@@ -1382,12 +1653,47 @@ chatForm.addEventListener('submit', async (e) => {
 });
 
 /* ============================================================
- * Init
+ * Init & Reconnection
  * ============================================================ */
 
-function init() {
+async function init() {
   resize();
   applyCtxDefaults();
+
+  const currentName = getPlayerName();
+  if (playerNameInput) {
+    playerNameInput.value = currentName;
+    playerNameInput.addEventListener('input', () => {
+      setPlayerName(playerNameInput.value);
+    });
+  }
+
+  /* Cek apakah ada sesi room aktif untuk reconnect otomatis */
+  const savedRoom = getSavedRoomCode();
+  if (savedRoom) {
+    const savedIsHost = getSavedIsHost();
+    try {
+      const roomState = await dbGetRoomState(savedRoom);
+      if (roomState && roomState.success && roomState.room) {
+        const r = roomState.room;
+        if (r.status === 'waiting') {
+          await joinRoom(savedRoom, { name: currentName, isHost: savedIsHost });
+          state.isHost = savedIsHost;
+          roomCodeDisplay.textContent = savedRoom;
+          showWaitingRoom(savedRoom, savedIsHost);
+        } else if (r.status === 'started') {
+          await joinRoom(savedRoom, { name: currentName, isHost: savedIsHost });
+          state.isHost = savedIsHost;
+          roomCodeDisplay.textContent = savedRoom;
+          showGame();
+          renderGuesserWordSlots(null);
+          canvasWrapper.classList.add('is-guesser');
+        }
+      }
+    } catch (_) {
+      /* Abaikan jika reconnect gagal, pengguna tetap di Lobby */
+    }
+  }
 }
 
 window.addEventListener('resize', resize);

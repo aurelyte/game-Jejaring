@@ -17,41 +17,119 @@
       <section id="lobbyScreen" class="lobby-screen" aria-label="Lobby">
 
         <div class="lobby-card">
-          <!-- buat room baru -->
-          <div class="lobby-block">
-            <h2 class="lobby-heading">Buat Room Baru</h2>
-            <p class="lobby-desc">Generate kode acak, bagikan ke temanmu.</p>
-            <button id="btnCreateRoom" class="btn-primary btn-lg">
-              ✦ Buat Room
-            </button>
+          <!-- input nama pemain -->
+          <div class="name-block">
+            <label for="playerNameInput" class="name-label">Nama Anda</label>
+            <input
+              type="text"
+              id="playerNameInput"
+              class="name-input"
+              placeholder="Ketik namamu (misal: Zenn)"
+              maxlength="16"
+              autocomplete="nickname"
+              spellcheck="false"
+              aria-label="Nama Pemain"
+            />
           </div>
 
-          <div class="lobby-divider" aria-hidden="true">atau</div>
-
-          <!-- join room -->
-          <div class="lobby-block">
-            <h2 class="lobby-heading">Masuk Room</h2>
-            <p class="lobby-desc">Ketik kode 6 karakter dari temanmu.</p>
-            <form id="joinForm" class="join-form" autocomplete="off" novalidate>
-              <input
-                type="text"
-                id="joinCodeInput"
-                class="join-input"
-                placeholder="A B 3 X 7 Q"
-                maxlength="6"
-                spellcheck="false"
-                aria-label="Kode room"
-              />
-              <button type="submit" id="btnJoinRoom" class="btn-primary">
-                Masuk →
+          <div class="lobby-blocks-grid">
+            <!-- buat room baru -->
+            <div class="lobby-block">
+              <h2 class="lobby-heading">Buat Room Baru</h2>
+              <p class="lobby-desc">Generate kode acak, bagikan ke temanmu.</p>
+              <button id="btnCreateRoom" class="btn-primary btn-lg">
+                ✦ Buat Room
               </button>
-            </form>
+            </div>
+
+            <div class="lobby-divider" aria-hidden="true">atau</div>
+
+            <!-- join room -->
+            <div class="lobby-block">
+              <h2 class="lobby-heading">Masuk Room</h2>
+              <p class="lobby-desc">Ketik kode 6 karakter dari temanmu.</p>
+              <form id="joinForm" class="join-form" autocomplete="off" novalidate>
+                <input
+                  type="text"
+                  id="joinCodeInput"
+                  class="join-input"
+                  placeholder="A B 3 X 7 Q"
+                  maxlength="6"
+                  spellcheck="false"
+                  aria-label="Kode room"
+                />
+                <button type="submit" id="btnJoinRoom" class="btn-primary">
+                  Masuk →
+                </button>
+              </form>
+            </div>
           </div>
 
           <!-- pesan error / status lobby -->
           <p id="joinError" class="join-error" aria-live="polite"></p>
         </div>
 
+      </section>
+
+      <!-- =====================================================
+           Layar Waiting Room (Multiplayer Waiting Room)
+           ===================================================== -->
+      <section id="waitingScreen" class="waiting-screen hidden" aria-label="Ruang Tunggu">
+        <div class="waiting-card">
+          <!-- Header: Kode Room & Status -->
+          <div class="waiting-header">
+            <div class="waiting-code-box">
+              <span class="waiting-code-label">KODE ROOM</span>
+              <div class="waiting-code-row">
+                <span id="waitingRoomCode" class="waiting-room-code">—</span>
+                <button id="btnCopyCode" class="btn-copy" title="Salin kode room" aria-label="Salin kode room">
+                  📋 Salin
+                </button>
+              </div>
+            </div>
+            <div class="waiting-status-badges">
+              <span class="status-badge status-badge--waiting">⏳ Menunggu Pemain</span>
+              <span id="waitingPlayerCountBadge" class="player-count-badge">👥 1/8 Pemain</span>
+            </div>
+          </div>
+
+          <p class="waiting-subtext">
+            Bagikan kode room di atas ke temanmu. Tunggu hingga semua pemain masuk ke daftar di bawah.
+          </p>
+
+          <!-- Daftar Pemain -->
+          <div class="waiting-players-section">
+            <h3 class="waiting-players-title">Pemain Terdaftar</h3>
+            <ul id="waitingPlayerList" class="waiting-player-list" aria-live="polite">
+              <!-- Rendered via JS -->
+            </ul>
+          </div>
+
+          <!-- Aksi Host & Non-Host -->
+          <div class="waiting-actions">
+            <!-- Kontrol khusus Host -->
+            <div id="hostWaitingControls" class="host-waiting-controls">
+              <button id="btnStartGame" class="btn-primary btn-lg btn-start-game">
+                🚀 Mulai Permainan
+              </button>
+              <p class="host-random-hint">
+                🎲 Penggambar pertama akan dipilih secara acak dari semua pemain online (termasuk Host).
+              </p>
+            </div>
+
+            <!-- Pesan khusus Non-Host -->
+            <div id="nonHostWaitingNotice" class="non-host-waiting-notice hidden">
+              <span class="pulse-dot"></span>
+              Menunggu host memulai permainan…
+            </div>
+
+            <p id="waitingError" class="waiting-error" aria-live="assertive"></p>
+
+            <button id="btnLeaveWaiting" class="btn-leave-waiting" title="Keluar dari ruang tunggu">
+              ← Keluar ke Lobby
+            </button>
+          </div>
+        </div>
       </section>
 
       <!-- =====================================================

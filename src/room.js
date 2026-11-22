@@ -1,5 +1,5 @@
 /**
- * src/room.js — Room lifecycle + broadcast
+ * src/room.js — Room lifecycle + broadcast + Supabase Postgres Authority
  *
  * Fase 2a: Supabase Realtime Presence channel per room.
  * Fase 2b: broadcast 'chat' events.
@@ -7,36 +7,9 @@
  * Fase 3a: broadcast 'new-word' (Host-authoritative: hanya hint/slot tersensor).
  * Fase 3b: broadcast 'guess-attempt' & 'guess-result'.
  * Fase 3c: sistem giliran round-robin ('turn-change') + timer.
- *
- * Public API:
- *   joinRoom(roomCode)          → Promise<channel>; resolves on SUBSCRIBED
- *   leaveRoom()                 → unsubscribes + cleans up
- *   sendChat(text)              → broadcast {type:'chat', text, from, ts}
- *   sendStroke(data)            → broadcast {type:'stroke', data, from, ts}
- *   sendClear()                 → broadcast {type:'clear', from, ts}
- *   sendNewWord(hint)           → broadcast {type:'new-word', hint, from, ts}
- *   sendGuessAttempt(guess)     → broadcast {type:'guess-attempt', guess, from, ts}
- *   sendGuessResult(result)     → broadcast {type:'guess-result', ...result, from, ts}
- *   sendTurnChange(payload)     → broadcast {type:'turn-change', ...payload, from, ts}
- *   sendPowerupRequest(powerup) → broadcast {type:'powerup-request', powerup, from, ts}
- *   sendPowerupApplied(payload) → broadcast {type:'powerup-applied', ...payload, from, ts}
- *   sendPowerupEnd(payload)     → broadcast {type:'powerup-end', ...payload, from, ts}
- *   onStatusChange(fn)          → 'connecting'|'connected'|'disconnected'|'error'
- *   onMemberChange(fn)          → (count, keys)
- *   onChatMessage(fn)           → {text, from, ts, self}
- *   onStroke(fn)                → {stroke, from, self}
- *   onClear(fn)                 → {from, self}
- *   onNewWord(fn)               → {hint, from, self}
- *   onGuessAttempt(fn)          → {guess, from, ts, self}
- *   onGuessResult(fn)           → {isCorrect, guesserId, guess, word, from, ts, self}
- *   onTurnChange(fn)            → {drawerId, drawerWord, hint, duration, startedAt, from, ts, self}
- *   onPowerupRequest(fn)        → {powerup, from, ts, self}
- *   onPowerupApplied(fn)        → {powerup, from, hint, initiatorId, duration, ts, self}
- *   onPowerupEnd(fn)            → {powerup, from, ts, self}
- *   currentRoom()               → room code | null
- *   generateRoomCode()          → random 6-char code
- *   getSelfKey()                → string short id
- *   getRoomMemberKeys()         → string[] list of presence keys
+ * Fase 4b/4c: power-up reveal-letter, freeze-rivals, extra-time.
+ * Fase Waiting Room: Room lifecycle (waiting -> started -> finished),
+ *                    Postgres RPCs, dan Randomized First Drawer.
  */
 
 import { supabase } from './supabase.js';
@@ -54,11 +27,17 @@ let _roomCode = null;
 /** @type {string[]} */
 let _presenceKeys = [];
 
+/** @type {Array<{id: string, name: string, is_host: boolean, joined_at: number, online: boolean}>} */
+let _memberDetails = [];
+
 /** @type {Array<(status: string) => void>} */
 const _statusListeners = [];
 
 /** @type {Array<(count: number, keys: string[]) => void>} */
 const _memberListeners = [];
+
+/** @type {Array<(members: Array<{id: string, name: string, is_host: boolean, joined_at: number, online: boolean}>) => void>} */
+const _memberPresenceListeners = [];
 
 /** @type {Array<(msg: {text: string, from: string, ts: number, self: boolean}) => void>} */
 const _chatListeners = [];
@@ -90,6 +69,15 @@ const _powerupAppliedListeners = [];
 /** @type {Array<(msg: {powerup: string, from: string, ts: number, self: boolean}) => void>} */
 const _powerupEndListeners = [];
 
+/** @type {Array<(msg: {player: any, from: string, ts: number, self: boolean}) => void>} */
+const _playerJoinedListeners = [];
+
+/** @type {Array<(msg: {playerId: string, from: string, ts: number, self: boolean}) => void>} */
+const _playerLeftListeners = [];
+
+/** @type {Array<(msg: {roomCode: string, players: any[], firstDrawerId: string, startedAt: any, from: string, ts: number, self: boolean}) => void>} */
+const _gameStartListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
@@ -99,6 +87,9 @@ export function onStatusChange(fn) { _statusListeners.push(fn); }
 
 /** @param {(count: number, keys: string[]) => void} fn */
 export function onMemberChange(fn) { _memberListeners.push(fn); }
+
+/** @param {(members: Array<{id: string, name: string, is_host: boolean, joined_at: number, online: boolean}>) => void} fn */
+export function onMemberPresence(fn) { _memberPresenceListeners.push(fn); }
 
 /** @param {(msg: {text: string, from: string, ts: number, self: boolean}) => void} fn */
 export function onChatMessage(fn) { _chatListeners.push(fn); }
@@ -130,18 +121,31 @@ export function onPowerupApplied(fn) { _powerupAppliedListeners.push(fn); }
 /** @param {(msg: {powerup: string, from: string, ts: number, self: boolean}) => void} fn */
 export function onPowerupEnd(fn) { _powerupEndListeners.push(fn); }
 
-function _emitStatus(s)         { _statusListeners.forEach((fn) => fn(s)); }
-function _emitMembers(n, keys)  { _memberListeners.forEach((fn) => fn(n, keys)); }
-function _emitChat(msg)         { _chatListeners.forEach((fn) => fn(msg)); }
-function _emitStroke(msg)       { _strokeListeners.forEach((fn) => fn(msg)); }
-function _emitClear(msg)        { _clearListeners.forEach((fn) => fn(msg)); }
-function _emitNewWord(msg)      { _newWordListeners.forEach((fn) => fn(msg)); }
-function _emitGuessAttempt(msg) { _guessAttemptListeners.forEach((fn) => fn(msg)); }
-function _emitGuessResult(msg)  { _guessResultListeners.forEach((fn) => fn(msg)); }
-function _emitTurnChange(msg)   { _turnChangeListeners.forEach((fn) => fn(msg)); }
-function _emitPowerupRequest(msg) { _powerupRequestListeners.forEach((fn) => fn(msg)); }
-function _emitPowerupApplied(msg) { _powerupAppliedListeners.forEach((fn) => fn(msg)); }
-function _emitPowerupEnd(msg)     { _powerupEndListeners.forEach((fn) => fn(msg)); }
+/** @param {(msg: {player: any, from: string, ts: number, self: boolean}) => void} fn */
+export function onPlayerJoined(fn) { _playerJoinedListeners.push(fn); }
+
+/** @param {(msg: {playerId: string, from: string, ts: number, self: boolean}) => void} fn */
+export function onPlayerLeft(fn) { _playerLeftListeners.push(fn); }
+
+/** @param {(msg: {roomCode: string, players: any[], firstDrawerId: string, startedAt: any, from: string, ts: number, self: boolean}) => void} fn */
+export function onGameStart(fn) { _gameStartListeners.push(fn); }
+
+function _emitStatus(s)            { _statusListeners.forEach((fn) => fn(s)); }
+function _emitMembers(n, keys)     { _memberListeners.forEach((fn) => fn(n, keys)); }
+function _emitMemberPresence(m)    { _memberPresenceListeners.forEach((fn) => fn(m)); }
+function _emitChat(msg)            { _chatListeners.forEach((fn) => fn(msg)); }
+function _emitStroke(msg)          { _strokeListeners.forEach((fn) => fn(msg)); }
+function _emitClear(msg)           { _clearListeners.forEach((fn) => fn(msg)); }
+function _emitNewWord(msg)         { _newWordListeners.forEach((fn) => fn(msg)); }
+function _emitGuessAttempt(msg)    { _guessAttemptListeners.forEach((fn) => fn(msg)); }
+function _emitGuessResult(msg)     { _guessResultListeners.forEach((fn) => fn(msg)); }
+function _emitTurnChange(msg)      { _turnChangeListeners.forEach((fn) => fn(msg)); }
+function _emitPowerupRequest(msg)  { _powerupRequestListeners.forEach((fn) => fn(msg)); }
+function _emitPowerupApplied(msg)  { _powerupAppliedListeners.forEach((fn) => fn(msg)); }
+function _emitPowerupEnd(msg)      { _powerupEndListeners.forEach((fn) => fn(msg)); }
+function _emitPlayerJoined(msg)    { _playerJoinedListeners.forEach((fn) => fn(msg)); }
+function _emitPlayerLeft(msg)      { _playerLeftListeners.forEach((fn) => fn(msg)); }
+function _emitGameStart(msg)       { _gameStartListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
  * Helpers
@@ -166,6 +170,9 @@ export function currentRoom() { return _roomCode; }
 /** getRoomMemberKeys - List of current member presence keys. */
 export function getRoomMemberKeys() { return [..._presenceKeys]; }
 
+/** getMemberDetails - List of current member presence details (name, is_host, etc.). */
+export function getMemberDetails() { return [..._memberDetails]; }
+
 /**
  * getSelfKey - Stable per-tab random identifier.
  *
@@ -181,8 +188,65 @@ export function getSelfKey() {
   return k;
 }
 
+/**
+ * getPlayerName - Ambil nama pemain dari sessionStorage (atau default).
+ */
+export function getPlayerName() {
+  const K = 'tebak-gambar:player-name';
+  let name = sessionStorage.getItem(K);
+  if (!name || !name.trim()) {
+    name = `Pemain ${getSelfKey().slice(0, 4)}`;
+    sessionStorage.setItem(K, name);
+  }
+  return name.trim();
+}
+
+/**
+ * setPlayerName - Simpan nama pemain ke sessionStorage.
+ */
+export function setPlayerName(name) {
+  const K = 'tebak-gambar:player-name';
+  const clean = (name || '').trim();
+  if (clean) {
+    sessionStorage.setItem(K, clean);
+  }
+  return clean;
+}
+
+/**
+ * getSavedRoomCode - Ambil kode room aktif dari sessionStorage untuk reconnect.
+ */
+export function getSavedRoomCode() {
+  return sessionStorage.getItem('tebak-gambar:room-code');
+}
+
+/**
+ * setSavedRoomCode - Simpan kode room aktif ke sessionStorage.
+ */
+export function setSavedRoomCode(code) {
+  if (code) {
+    sessionStorage.setItem('tebak-gambar:room-code', code.toUpperCase().trim());
+  } else {
+    sessionStorage.removeItem('tebak-gambar:room-code');
+  }
+}
+
+/**
+ * getSavedIsHost - Ambil status host dari sessionStorage.
+ */
+export function getSavedIsHost() {
+  return sessionStorage.getItem('tebak-gambar:is-host') === 'true';
+}
+
+/**
+ * setSavedIsHost - Simpan status host ke sessionStorage.
+ */
+export function setSavedIsHost(isHost) {
+  sessionStorage.setItem('tebak-gambar:is-host', isHost ? 'true' : 'false');
+}
+
 /* ============================================================
- * Join
+ * Join Realtime Channel
  * ============================================================ */
 
 /**
@@ -190,10 +254,12 @@ export function getSelfKey() {
  * Promise that resolves when the WebSocket is SUBSCRIBED.
  *
  * @param {string} roomCode
+ * @param {{ name?: string, isHost?: boolean }} [options]
  * @returns {Promise<import('@supabase/supabase-js').RealtimeChannel>}
  */
-export function joinRoom(roomCode) {
+export function joinRoom(roomCode, { name, isHost = false } = {}) {
   const code = roomCode.trim().toUpperCase();
+  const playerName = name || getPlayerName();
 
   return new Promise(async (resolve, reject) => {
     if (!supabase) {
@@ -204,6 +270,8 @@ export function joinRoom(roomCode) {
     await leaveRoom();
 
     _roomCode = code;
+    setSavedRoomCode(code);
+    setSavedIsHost(isHost);
     _emitStatus('connecting');
 
     _channel = supabase.channel(`room:${code}`, {
@@ -219,11 +287,62 @@ export function joinRoom(roomCode) {
       }
     }, 10000);
 
-    /* ---- Presence: member count & keys ---- */
+    /* ---- Presence: member count, keys, & details ---- */
     _channel.on('presence', { event: 'sync' }, () => {
       const state = _channel.presenceState();
       _presenceKeys = Object.keys(state).sort();
+
+      const memberMap = new Map();
+      for (const [key, presences] of Object.entries(state)) {
+        const latest = presences[presences.length - 1] || {};
+        memberMap.set(key, {
+          id:        key,
+          name:      latest.name || `Pemain ${key.slice(0, 4)}`,
+          is_host:   Boolean(latest.is_host),
+          joined_at: latest.joined_at || Date.now(),
+          online:    true,
+        });
+      }
+      _memberDetails = Array.from(memberMap.values()).sort((a, b) => a.joined_at - b.joined_at);
+
       _emitMembers(_presenceKeys.length, _presenceKeys);
+      _emitMemberPresence(_memberDetails);
+    });
+
+    /* ---- Broadcast: player-joined (Waiting Room) ---- */
+    _channel.on('broadcast', { event: 'player-joined' }, ({ payload }) => {
+      if (!payload) return;
+      _emitPlayerJoined({
+        player: payload.player,
+        from:   payload.from,
+        ts:     payload.ts,
+        self:   payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: player-left (Waiting Room) ---- */
+    _channel.on('broadcast', { event: 'player-left' }, ({ payload }) => {
+      if (!payload) return;
+      _emitPlayerLeft({
+        playerId: payload.playerId,
+        from:     payload.from,
+        ts:       payload.ts,
+        self:     payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: game-start (Waiting Room -> Game) ---- */
+    _channel.on('broadcast', { event: 'game-start' }, ({ payload }) => {
+      if (!payload) return;
+      _emitGameStart({
+        roomCode:      payload.roomCode,
+        players:       payload.players,
+        firstDrawerId: payload.firstDrawerId,
+        startedAt:     payload.startedAt,
+        from:          payload.from,
+        ts:            payload.ts,
+        self:          payload.from === getSelfKey(),
+      });
     });
 
     /* ---- Broadcast: chat messages ---- */
@@ -346,7 +465,12 @@ export function joinRoom(roomCode) {
           clearTimeout(timeoutHandle);
           _emitStatus('connected');
           try {
-            await _channel.track({ joined_at: Date.now() });
+            await _channel.track({
+              id:        getSelfKey(),
+              name:      playerName,
+              is_host:   Boolean(isHost),
+              joined_at: Date.now(),
+            });
           } catch (_) {}
           resolve(_channel);
         }
@@ -376,19 +500,36 @@ export function joinRoom(roomCode) {
  * ============================================================ */
 
 /**
- * leaveRoom - Untrack presence and tear down the channel.
+ * leaveRoom - Untrack presence, inform peers, and tear down the channel.
  */
 export async function leaveRoom() {
-  if (!_channel) return;
-  try {
-    await _channel.untrack();
-    if (supabase) await supabase.removeChannel(_channel);
-  } catch (_) { /* ignore cleanup errors */ }
-  _channel      = null;
-  _roomCode     = null;
-  _presenceKeys = [];
+  const code = _roomCode;
+  const selfKey = getSelfKey();
+
+  if (code && selfKey) {
+    try {
+      await sendPlayerLeft(selfKey);
+      await dbLeaveRoom(code, selfKey);
+    } catch (_) {}
+  }
+
+  if (_channel) {
+    try {
+      await _channel.untrack();
+      if (supabase) await supabase.removeChannel(_channel);
+    } catch (_) { /* ignore cleanup errors */ }
+  }
+
+  _channel       = null;
+  _roomCode      = null;
+  _presenceKeys  = [];
+  _memberDetails = [];
+  setSavedRoomCode(null);
+  setSavedIsHost(false);
+
   _emitStatus('disconnected');
   _emitMembers(0, []);
+  _emitMemberPresence([]);
 }
 
 /* ============================================================
@@ -608,4 +749,177 @@ export async function sendPowerupEnd(payload) {
     event:   'powerup-end',
     payload: fullPayload,
   });
+}
+
+/* ============================================================
+ * Broadcast: Waiting Room & Lifecycle
+ * ============================================================ */
+
+/**
+ * sendPlayerJoined - Inform room that a player joined.
+ *
+ * @param {object} player
+ */
+export async function sendPlayerJoined(player) {
+  if (!_channel) return;
+  await _channel.send({
+    type:    'broadcast',
+    event:   'player-joined',
+    payload: { player, from: getSelfKey(), ts: Date.now() },
+  });
+}
+
+/**
+ * sendPlayerLeft - Inform room that a player left.
+ *
+ * @param {string} playerId
+ */
+export async function sendPlayerLeft(playerId) {
+  if (!_channel) return;
+  await _channel.send({
+    type:    'broadcast',
+    event:   'player-left',
+    payload: { playerId, from: getSelfKey(), ts: Date.now() },
+  });
+}
+
+/**
+ * sendGameStart - Host broadcasts transition to gameplay.
+ *
+ * @param {object} payload
+ * @param {string} payload.roomCode
+ * @param {any[]} payload.players
+ * @param {string} payload.firstDrawerId
+ * @param {any} payload.startedAt
+ */
+export async function sendGameStart(payload) {
+  if (!_channel) return;
+
+  const fullPayload = {
+    ...payload,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  _emitGameStart({ ...fullPayload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'game-start',
+    payload: fullPayload,
+  });
+}
+
+/* ============================================================
+ * Supabase Postgres Authoritative RPCs
+ * ============================================================ */
+
+/**
+ * dbCreateRoom - Create room in PostgreSQL.
+ */
+export async function dbCreateRoom(roomCode, playerId, playerName) {
+  if (!supabase) return { success: true, localOnly: true };
+
+  try {
+    const { data, error } = await supabase.rpc('create_room_rpc', {
+      p_room_code:        roomCode,
+      p_host_player_id:   playerId,
+      p_host_player_name: playerName,
+      p_max_players:      8,
+    });
+
+    if (error) {
+      console.warn('[dbCreateRoom] RPC notice:', error.message);
+      return { success: false, error: error.message };
+    }
+    return data || { success: true };
+  } catch (err) {
+    console.warn('[dbCreateRoom] error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * dbJoinRoom - Join room with database transaction row-lock (SELECT ... FOR UPDATE).
+ */
+export async function dbJoinRoom(roomCode, playerId, playerName) {
+  if (!supabase) return { success: true, localOnly: true };
+
+  try {
+    const { data, error } = await supabase.rpc('join_room_rpc', {
+      p_room_code:   roomCode,
+      p_player_id:   playerId,
+      p_player_name: playerName,
+    });
+
+    if (error) {
+      console.warn('[dbJoinRoom] RPC notice:', error.message);
+      return { success: false, error: error.message };
+    }
+    return data || { success: true };
+  } catch (err) {
+    console.warn('[dbJoinRoom] error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * dbStartRoom - Host starts room with database transaction row-lock & randomized drawer.
+ */
+export async function dbStartRoom(roomCode, hostPlayerId, minPlayers = 1) {
+  if (!supabase) return { success: false, error: 'Database Supabase tidak terhubung' };
+
+  try {
+    const { data, error } = await supabase.rpc('start_room_rpc', {
+      p_room_code:      roomCode,
+      p_host_player_id: hostPlayerId,
+      p_min_players:    minPlayers,
+    });
+
+    if (error) {
+      console.warn('[dbStartRoom] RPC notice:', error.message);
+      return { success: false, error: error.message };
+    }
+    return data;
+  } catch (err) {
+    console.warn('[dbStartRoom] error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * dbGetRoomState - Get room state & player snapshot from PostgreSQL.
+ */
+export async function dbGetRoomState(roomCode) {
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase.rpc('get_room_state_rpc', {
+      p_room_code: roomCode,
+    });
+
+    if (error) return null;
+    return data;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * dbLeaveRoom - Remove player from PostgreSQL room_players.
+ */
+export async function dbLeaveRoom(roomCode, playerId) {
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase.rpc('leave_room_rpc', {
+      p_room_code: roomCode,
+      p_player_id: playerId,
+    });
+
+    if (error) return null;
+    return data;
+  } catch (_) {
+    return null;
+  }
 }
