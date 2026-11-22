@@ -1066,7 +1066,7 @@ function draw(e) {
 
 function stopDraw(e) {
   if (!state.drawing || !state.isDrawer) return;
-  e.preventDefault();
+  if (e && e.cancelable) e.preventDefault();
   state.drawing = false;
   ctx.closePath();
 
@@ -1092,6 +1092,25 @@ function stopDraw(e) {
   }
   currentBatchPoints = [];
   isBatchStart = false;
+
+  /* Jaga agar kursor tetap tampil jika mouse masih berada di area canvas */
+  if (e && e.pointerType === 'touch') {
+    hideCursor();
+  } else if (e && typeof e.clientX === 'number') {
+    const rect = canvas.getBoundingClientRect();
+    const isInside = (
+      e.clientX >= rect.left &&
+      e.clientX <= rect.right &&
+      e.clientY >= rect.top &&
+      e.clientY <= rect.bottom
+    );
+    if (isInside && state.isDrawer) {
+      showCursor();
+      updateCursor(e);
+    } else {
+      hideCursor();
+    }
+  }
 }
 
 /* ============================================================
@@ -1158,7 +1177,14 @@ onClear(({ from, self }) => {
  * ============================================================ */
 
 function updateCursor(e) {
-  if (!state.isDrawer) return;
+  if (!state.isDrawer) {
+    hideCursor();
+    return;
+  }
+
+  /* Pastikan kursor selalu terlihat saat pointer bergerak di canvas */
+  brushCursor.style.display = 'block';
+
   const rect = canvas.getBoundingClientRect();
   const x    = e.clientX - rect.left;
   const y    = e.clientY - rect.top;
@@ -1251,7 +1277,7 @@ canvas.addEventListener('lostpointercapture', () => {
     currentBatchPoints = [];
     isBatchStart = false;
   }
-  hideCursor();
+  // Tidak memanggil hideCursor di sini agar kursor tidak hilang setelah selesai membuat goresan
 });
 
 /* ============================================================
