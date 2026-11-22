@@ -5,19 +5,8 @@
  * Fase 1c: guess box lokal — tebak kata hardcoded, belum multiplayer.
  * Fase 2a: Supabase Realtime room — lobby, join/create, status koneksi.
  * Fase 2b: broadcast 'chat' — uji dua-arah sebelum stroke gambar.
+ * Fase 2c: broadcast stroke real-time dengan batching ~60ms.
  * Native Canvas API, tanpa library eksternal.
- *
- * Fitur:
- *   - Lobby: buat room (kode acak) atau join dengan kode
- *   - Room bar: kode room, jumlah pemain, badge koneksi, tombol leave
- *   - Drawing dengan mouse/touch via Pointer Events API
- *   - Pilihan warna (swatch + color picker)
- *   - Pilihan ukuran kuas (S / M / L)
- *   - Tombol clear canvas
- *   - Custom brush cursor (ukuran & warna mengikuti pilihan)
- *   - Canvas auto-resize mengikuti lebar wrapper (16:9)
- *   - Guess box: input tebakan, feedback benar/salah, skor lokal
- *   - Kata dipilih random dari array; baru digenerate setelah benar
  */
 
 import {
@@ -25,9 +14,13 @@ import {
   joinRoom,
   leaveRoom,
   sendChat,
+  sendStroke,
+  sendClear,
   onStatusChange,
   onMemberChange,
   onChatMessage,
+  onStroke,
+  onClear,
 } from './room.js';
 
 /* ============================================================
@@ -39,15 +32,14 @@ const gameScreen  = /** @type {HTMLElement} */ (document.getElementById('gameScr
 
 /**
  * showGame - Hide lobby, reveal game screen, then initialise canvas.
- *
- * Canvas sizing (resize()) must run after the wrapper is visible so
- * offsetWidth returns the real layout width.
  */
 function showGame() {
   lobbyScreen.classList.add('hidden');
   gameScreen.classList.remove('hidden');
-  /* canvas was invisible during lobby; force a fresh size calculation */
-  resize();
+  /* ensure DOM layout has rendered before sizing canvas */
+  requestAnimationFrame(() => {
+    resize();
+  });
 }
 
 /** showLobby - Return to lobby, leave the current room. */
@@ -60,17 +52,21 @@ async function showLobby() {
 }
 
 /* ============================================================
- * Room bar DOM refs
+ * Room bar & Role DOM refs
  * ============================================================ */
-const roomCodeDisplay = /** @type {HTMLElement}      */ (document.getElementById('roomCodeDisplay'));
-const roomMembersEl   = /** @type {HTMLElement}      */ (document.getElementById('roomMembers'));
-const connBadgeEl     = /** @type {HTMLElement}      */ (document.getElementById('connBadge'));
-const btnLeaveRoom    = /** @type {HTMLButtonElement} */ (document.getElementById('btnLeaveRoom'));
+const roomCodeDisplay   = /** @type {HTMLElement}      */ (document.getElementById('roomCodeDisplay'));
+const roomMembersEl     = /** @type {HTMLElement}      */ (document.getElementById('roomMembers'));
+const connBadgeEl       = /** @type {HTMLElement}      */ (document.getElementById('connBadge'));
+const btnLeaveRoom      = /** @type {HTMLButtonElement} */ (document.getElementById('btnLeaveRoom'));
+const btnRoleToggle     = /** @type {HTMLButtonElement} */ (document.getElementById('btnRoleToggle'));
+const drawingIndicator  = /** @type {HTMLElement}       */ (document.getElementById('drawingIndicator'));
+const canvasWrapper     = /** @type {HTMLElement}       */ (document.getElementById('canvasWrapper'));
 
 /* ============================================================
  * Lobby DOM refs
  * ============================================================ */
 const btnCreateRoom  = /** @type {HTMLButtonElement} */ (document.getElementById('btnCreateRoom'));
+const btnJoinRoom    = /** @type {HTMLButtonElement} */ (document.getElementById('btnJoinRoom'));
 const joinForm       = /** @type {HTMLFormElement}   */ (document.getElementById('joinForm'));
 const joinCodeInput  = /** @type {HTMLInputElement}  */ (document.getElementById('joinCodeInput'));
 const joinErrorEl    = /** @type {HTMLParagraphElement} */ (document.getElementById('joinError'));
@@ -79,7 +75,6 @@ const joinErrorEl    = /** @type {HTMLParagraphElement} */ (document.getElementB
  * Connection status → room bar badge
  * ============================================================ */
 
-/** CONN_LABEL - Human-readable labels for each connection status. */
 const CONN_LABEL = {
   connecting:   '⬤ Menghubungkan…',
   connected:    '⬤ Terhubung',
@@ -88,8 +83,8 @@ const CONN_LABEL = {
 };
 
 onStatusChange((status) => {
-  connBadgeEl.dataset.status  = status;
-  connBadgeEl.textContent     = CONN_LABEL[status] ?? status;
+  connBadgeEl.dataset.status = status;
+  connBadgeEl.textContent    = CONN_LABEL[status] ?? status;
 });
 
 onMemberChange((count) => {
@@ -102,9 +97,6 @@ onMemberChange((count) => {
 
 /**
  * enterRoom - Join a Supabase channel and transition to the game screen.
- *
- * Shows an inline error on the lobby form when the room code is invalid
- * or connection fails; otherwise wires up the room bar and shows the game.
  *
  * @param {string} code
  */
@@ -119,17 +111,30 @@ async function enterRoom(code) {
 
   joinErrorEl.textContent = '';
   joinCodeInput.classList.remove('error');
+
   btnCreateRoom.disabled = true;
+  btnCreateRoom.textContent = '✦ Menghubungkan…';
+  if (btnJoinRoom) {
+    btnJoinRoom.disabled = true;
+    btnJoinRoom.textContent = '…';
+  }
 
   try {
     await joinRoom(trimmed);
     roomCodeDisplay.textContent = trimmed;
     showGame();
     nextWord();
+    updateRoleUI();
   } catch (err) {
     joinErrorEl.textContent = `Gagal terhubung: ${err.message}`;
+    console.error('[enterRoom]', err);
   } finally {
     btnCreateRoom.disabled = false;
+    btnCreateRoom.textContent = '✦ Buat Room';
+    if (btnJoinRoom) {
+      btnJoinRoom.disabled = false;
+      btnJoinRoom.textContent = 'Masuk →';
+    }
   }
 }
 
@@ -149,7 +154,7 @@ joinForm.addEventListener('submit', (e) => {
 
 /* force uppercase while typing */
 joinCodeInput.addEventListener('input', () => {
-  const sel   = joinCodeInput.selectionStart;
+  const sel = joinCodeInput.selectionStart;
   joinCodeInput.value = joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   joinCodeInput.setSelectionRange(sel, sel);
 });
@@ -157,17 +162,46 @@ joinCodeInput.addEventListener('input', () => {
 btnLeaveRoom.addEventListener('click', showLobby);
 
 /* ============================================================
+ * Role management (Fase 2c: Penggambar vs Penonton)
+ * ============================================================ */
+
+function updateRoleUI() {
+  if (state.isDrawer) {
+    btnRoleToggle.classList.remove('is-spectator');
+    btnRoleToggle.textContent = '🎨 Peran: Penggambar';
+    canvasWrapper.classList.remove('is-spectator');
+    drawingIndicator.textContent = '🎨 Mode Penggambar: Anda bisa menggambar di canvas';
+  } else {
+    btnRoleToggle.classList.add('is-spectator');
+    btnRoleToggle.textContent = '👁️ Peran: Penonton';
+    canvasWrapper.classList.add('is-spectator');
+    drawingIndicator.textContent = '👁️ Mode Penonton: Hanya melihat (klik tombol peran di atas untuk menggambar)';
+  }
+}
+
+btnRoleToggle.addEventListener('click', () => {
+  state.isDrawer = !state.isDrawer;
+  updateRoleUI();
+});
+
+/* ============================================================
  * State
  * ============================================================ */
 
-/** @type {{ color: string, size: number, drawing: boolean, lastX: number, lastY: number }} */
+/** @type {{ color: string, size: number, drawing: boolean, lastX: number, lastY: number, isDrawer: boolean }} */
 const state = {
   color: '#f1f5f9',
   size: 12,
   drawing: false,
   lastX: 0,
   lastY: 0,
+  isDrawer: true, // semua orang bisa menggambar secara default untuk testing
 };
+
+/* stroke batching state (Fase 2c) */
+let currentBatchPoints = [];
+let batchIntervalId = null;
+let isBatchStart = false;
 
 /* ============================================================
  * DOM refs
@@ -182,34 +216,32 @@ const clearBtn    = document.getElementById('clearBtn');
  * Canvas sizing — maintain 16:9, fill wrapper width
  * ============================================================ */
 
-/**
- * resize - Adjust canvas pixel dimensions to match CSS layout.
- *
- * Canvas backing store must match the displayed CSS size to avoid
- * blurry lines.  We preserve existing pixel content by blitting to
- * a temporary canvas before resizing, then restoring.
- */
 function resize() {
+  const w = canvas.offsetWidth;
+  if (w === 0) return; /* jangan ubah ukuran jika wrapper masih tersembunyi */
+
   /* snapshot current content */
-  const tmp    = document.createElement('canvas');
-  tmp.width    = canvas.width;
-  tmp.height   = canvas.height;
-  tmp.getContext('2d').drawImage(canvas, 0, 0);
+  const tmp = document.createElement('canvas');
+  tmp.width  = canvas.width;
+  tmp.height = canvas.height;
+  if (canvas.width > 0 && canvas.height > 0) {
+    tmp.getContext('2d').drawImage(canvas, 0, 0);
+  }
 
   /* recalculate pixel size from CSS layout */
-  const w = canvas.offsetWidth;
   const h = Math.round(w * (9 / 16));
 
   canvas.width  = w;
   canvas.height = h;
   canvas.style.height = `${h}px`;
 
-  /* restore content and reset context state (lost on resize) */
-  ctx.drawImage(tmp, 0, 0);
+  /* restore content and reset context state */
+  if (tmp.width > 0 && tmp.height > 0) {
+    ctx.drawImage(tmp, 0, 0);
+  }
   applyCtxDefaults();
 }
 
-/** applyCtxDefaults - Set context rendering defaults after resize. */
 function applyCtxDefaults() {
   ctx.lineCap     = 'round';
   ctx.lineJoin    = 'round';
@@ -218,18 +250,11 @@ function applyCtxDefaults() {
 }
 
 /* ============================================================
- * Drawing
+ * Drawing & Real-time Stroke Batching (Fase 2c)
  * ============================================================ */
 
-/**
- * canvasPoint - Convert a pointer event into canvas-local coordinates.
- *
- * @param {PointerEvent} e
- * @returns {{ x: number, y: number }}
- */
 function canvasPoint(e) {
-  const rect  = canvas.getBoundingClientRect();
-  /* scale from CSS pixels to canvas pixels */
+  const rect   = canvas.getBoundingClientRect();
   const scaleX = canvas.width  / rect.width;
   const scaleY = canvas.height / rect.height;
   return {
@@ -239,14 +264,26 @@ function canvasPoint(e) {
 }
 
 /**
- * startDraw - Begin a new stroke on pointerdown.
- *
- * We call moveTo so the first pointermove draws from the click point
- * rather than from wherever the path was left previously.
- *
- * @param {PointerEvent} e
+ * flushStrokeBatch - Send buffered stroke points to room peers.
+ * Interval: ~60ms.
  */
+function flushStrokeBatch() {
+  if (currentBatchPoints.length > 1) {
+    sendStroke({
+      points:    currentBatchPoints,
+      color:     state.color,
+      sizeRatio: state.size / canvas.width,
+      isStart:   isBatchStart,
+      isEnd:     false,
+    });
+    isBatchStart = false;
+    /* retain the last point as the start of the next segment */
+    currentBatchPoints = [currentBatchPoints[currentBatchPoints.length - 1]];
+  }
+}
+
 function startDraw(e) {
+  if (!state.isDrawer) return;
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
 
@@ -255,22 +292,24 @@ function startDraw(e) {
   state.lastX   = x;
   state.lastY   = y;
 
-  /* draw a dot on click-without-move */
+  /* draw dot on local canvas */
   ctx.beginPath();
   ctx.arc(x, y, state.size / 2, 0, Math.PI * 2);
   ctx.fillStyle = state.color;
   ctx.fill();
+
+  /* initialize batch with normalized coordinates */
+  const nx = x / canvas.width;
+  const ny = y / canvas.height;
+  currentBatchPoints = [{ x: nx, y: ny }];
+  isBatchStart = true;
+
+  clearInterval(batchIntervalId);
+  batchIntervalId = setInterval(flushStrokeBatch, 60);
 }
 
-/**
- * draw - Extend the current stroke on pointermove.
- *
- * Uses quadratic Bézier midpoints for smooth curves.
- *
- * @param {PointerEvent} e
- */
 function draw(e) {
-  if (!state.drawing) return;
+  if (!state.drawing || !state.isDrawer) return;
   e.preventDefault();
 
   const { x, y } = canvasPoint(e);
@@ -284,38 +323,109 @@ function draw(e) {
 
   state.lastX = x;
   state.lastY = y;
+
+  /* append normalized point to batch */
+  currentBatchPoints.push({
+    x: x / canvas.width,
+    y: y / canvas.height,
+  });
 }
 
-/**
- * stopDraw - End the current stroke on pointerup / pointerleave.
- *
- * @param {PointerEvent} e
- */
 function stopDraw(e) {
-  if (!state.drawing) return;
+  if (!state.drawing || !state.isDrawer) return;
   e.preventDefault();
   state.drawing = false;
   ctx.closePath();
+
+  clearInterval(batchIntervalId);
+  batchIntervalId = null;
+
+  /* flush remaining points and flag end of stroke */
+  if (currentBatchPoints.length > 0) {
+    sendStroke({
+      points:    currentBatchPoints,
+      color:     state.color,
+      sizeRatio: state.size / canvas.width,
+      isStart:   isBatchStart,
+      isEnd:     true,
+    });
+  }
+  currentBatchPoints = [];
+  isBatchStart = false;
 }
+
+/* ============================================================
+ * Peer Stroke Rendering (Fase 2c)
+ * ============================================================ */
+
+let peerDrawingTimeout = null;
+
+function showPeerDrawing(from) {
+  drawingIndicator.classList.add('is-peer-drawing');
+  drawingIndicator.textContent = `🎨 Peer ${from.slice(0, 4)} sedang menggambar...`;
+
+  clearTimeout(peerDrawingTimeout);
+  peerDrawingTimeout = setTimeout(() => {
+    drawingIndicator.classList.remove('is-peer-drawing');
+    updateRoleUI();
+  }, 1600);
+}
+
+function drawPeerStroke(strokeData) {
+  if (!strokeData || !strokeData.points || strokeData.points.length === 0) return;
+
+  const { points, color, sizeRatio, isStart } = strokeData;
+  const strokeSize = (sizeRatio && canvas.width) ? (sizeRatio * canvas.width) : 12;
+
+  ctx.save();
+  ctx.lineCap  = 'round';
+  ctx.lineJoin = 'round';
+
+  if (points.length === 1 && isStart) {
+    /* single dot */
+    const pt = points[0];
+    ctx.beginPath();
+    ctx.arc(pt.x * canvas.width, pt.y * canvas.height, strokeSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  } else if (points.length > 1) {
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = strokeSize;
+    ctx.moveTo(points[0].x * canvas.width, points[0].y * canvas.height);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x * canvas.width, points[i].y * canvas.height);
+    }
+    ctx.stroke();
+  }
+
+  ctx.restore();
+  applyCtxDefaults();
+}
+
+onStroke(({ stroke, from, self }) => {
+  if (self) return; /* ignore local echo */
+  showPeerDrawing(from);
+  drawPeerStroke(stroke);
+});
+
+onClear(({ from, self }) => {
+  if (self) return;
+  clearCanvas();
+  drawingIndicator.textContent = `🗑 Canvas dibersihkan oleh Peer ${from.slice(0, 4)}`;
+  setTimeout(updateRoleUI, 2000);
+});
 
 /* ============================================================
  * Custom brush cursor
  * ============================================================ */
 
-/**
- * updateCursor - Reposition and resize the brush cursor overlay.
- *
- * The cursor div is a circle that tracks pointer position on the
- * canvas wrapper, reflecting current brush size and color.
- *
- * @param {PointerEvent} e
- */
 function updateCursor(e) {
+  if (!state.isDrawer) return;
   const rect = canvas.getBoundingClientRect();
   const x    = e.clientX - rect.left;
   const y    = e.clientY - rect.top;
 
-  /* brush size in CSS pixels (canvas pixel → CSS pixel) */
   const cssSize = state.size * (rect.width / canvas.width);
 
   brushCursor.style.left   = `${x}px`;
@@ -324,49 +434,41 @@ function updateCursor(e) {
   brushCursor.style.height = `${cssSize}px`;
 }
 
-function showCursor() { brushCursor.style.display = 'block'; }
-function hideCursor() { brushCursor.style.display = 'none';  }
+function showCursor() {
+  if (state.isDrawer) brushCursor.style.display = 'block';
+}
+
+function hideCursor() {
+  brushCursor.style.display = 'none';
+}
 
 /* ============================================================
  * Toolbar — color
  * ============================================================ */
 
-/**
- * setColor - Update active drawing color and sync all UI.
- *
- * @param {string} hex  — CSS hex color string
- */
 function setColor(hex) {
-  state.color = hex;
+  state.color     = hex;
   ctx.strokeStyle = hex;
   colorPicker.value = hex;
 
-  /* update active swatch */
   document.querySelectorAll('.swatch[data-color]').forEach((el) => {
     el.classList.toggle('active', el.dataset.color === hex);
   });
 }
 
-/* swatch click */
 document.querySelectorAll('.swatch[data-color]').forEach((btn) => {
   btn.addEventListener('click', () => setColor(btn.dataset.color));
 });
 
-/* native color picker */
 colorPicker.addEventListener('input', (e) => setColor(e.target.value));
 
 /* ============================================================
  * Toolbar — brush size
  * ============================================================ */
 
-/**
- * setSize - Update brush size and sync UI.
- *
- * @param {number} px
- */
 function setSize(px) {
-  state.size      = px;
-  ctx.lineWidth   = px;
+  state.size    = px;
+  ctx.lineWidth = px;
 
   document.querySelectorAll('.size-btn').forEach((btn) => {
     btn.classList.toggle('active', Number(btn.dataset.size) === px);
@@ -381,12 +483,14 @@ document.querySelectorAll('.size-btn').forEach((btn) => {
  * Toolbar — clear
  * ============================================================ */
 
-/** clearCanvas - Wipe the entire canvas to transparent black. */
 function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-clearBtn.addEventListener('click', clearCanvas);
+clearBtn.addEventListener('click', () => {
+  clearCanvas();
+  sendClear();
+});
 
 /* ============================================================
  * Canvas event listeners
@@ -396,7 +500,6 @@ canvas.addEventListener('pointermove',  draw,       { passive: false });
 canvas.addEventListener('pointerup',    stopDraw,   { passive: false });
 canvas.addEventListener('pointerleave', stopDraw,   { passive: false });
 
-/* custom cursor tracking */
 canvas.addEventListener('pointermove', updateCursor, { passive: true });
 canvas.addEventListener('pointerenter', showCursor,  { passive: true });
 canvas.addEventListener('pointerleave', hideCursor,  { passive: true });
@@ -405,10 +508,10 @@ canvas.addEventListener('pointerleave', hideCursor,  { passive: true });
  * Init
  * ============================================================ */
 
-/** init - Bootstrap canvas dimensions and default context state. */
 function init() {
   resize();
   applyCtxDefaults();
+  updateRoleUI();
 }
 
 window.addEventListener('resize', resize);
@@ -418,14 +521,6 @@ init();
  * Guess box — Fase 1c
  * ============================================================ */
 
-/**
- * WORD_LIST - Hardcoded pool of drawable nouns.
- *
- * All lowercase; matching is case-insensitive.
- * Extend this array freely — no networking required.
- *
- * @type {string[]}
- */
 const WORD_LIST = [
   'kucing', 'anjing', 'rumah', 'pohon', 'mobil',
   'sepeda', 'matahari', 'bulan', 'bintang', 'awan',
@@ -435,80 +530,47 @@ const WORD_LIST = [
   'pizza', 'roti', 'kunci', 'jam', 'telepon',
 ];
 
-/* ----- guess state ----- */
-/** @type {{ word: string, scoreCorrect: number, scoreWrong: number }} */
 const guessState = {
   word:         '',
   scoreCorrect: 0,
   scoreWrong:   0,
 };
 
-/* ----- guess DOM refs ----- */
-const guessForm     = /** @type {HTMLFormElement}   */ (document.getElementById('guessForm'));
-const guessInput    = /** @type {HTMLInputElement}  */ (document.getElementById('guessInput'));
-const feedbackEl    = /** @type {HTMLParagraphElement} */ (document.getElementById('feedback'));
-const wordSlotsEl   = /** @type {HTMLDivElement}    */ (document.getElementById('wordSlots'));
-const wordHintEl    = /** @type {HTMLSpanElement}   */ (document.getElementById('wordHint'));
+const guessForm      = /** @type {HTMLFormElement}   */ (document.getElementById('guessForm'));
+const guessInput     = /** @type {HTMLInputElement}  */ (document.getElementById('guessInput'));
+const feedbackEl     = /** @type {HTMLParagraphElement} */ (document.getElementById('feedback'));
+const wordSlotsEl    = /** @type {HTMLDivElement}    */ (document.getElementById('wordSlots'));
+const wordHintEl     = /** @type {HTMLSpanElement}   */ (document.getElementById('wordHint'));
 const scoreCorrectEl = /** @type {HTMLElement}      */ (document.getElementById('scoreCorrect'));
 const scoreWrongEl   = /** @type {HTMLElement}      */ (document.getElementById('scoreWrong'));
 
-/* feedback auto-clear timer handle */
 let feedbackTimer = 0;
 
-/* ============================================================
- * Word helpers
- * ============================================================ */
-
-/**
- * pickWord - Choose a random word from WORD_LIST.
- *
- * Avoids repeating the same word twice in a row when the pool
- * is large enough.
- *
- * @returns {string}
- */
 function pickWord() {
   if (WORD_LIST.length === 1) return WORD_LIST[0];
-
   let candidate;
   do {
     candidate = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
   } while (candidate === guessState.word);
-
   return candidate;
 }
 
-/**
- * renderWordSlots - Render blank letter-slot divs for the current word.
- *
- * Each character gets its own slot; spaces get a narrow gap div.
- * Slots are intentionally empty (underscores shown via CSS border-bottom).
- */
 function renderWordSlots() {
   wordSlotsEl.innerHTML = '';
-
   for (const ch of guessState.word) {
     const slot = document.createElement('div');
-
     if (ch === ' ') {
       slot.className = 'letter-slot space-gap';
     } else {
       slot.className = 'letter-slot';
-      /* data-char stored for future "reveal hint" feature */
       slot.dataset.char = ch;
     }
-
     wordSlotsEl.appendChild(slot);
   }
-
-  /* e.g. "(5 huruf)" */
   const len = guessState.word.replace(/ /g, '').length;
   wordHintEl.textContent = `(${len} huruf)`;
 }
 
-/**
- * nextWord - Pick a new word, clear the canvas, reset the input.
- */
 function nextWord() {
   guessState.word = pickWord();
   renderWordSlots();
@@ -517,23 +579,10 @@ function nextWord() {
   guessInput.focus();
 }
 
-/* ============================================================
- * Feedback helpers
- * ============================================================ */
-
-/**
- * showFeedback - Display a feedback message, then auto-clear it.
- *
- * @param {string}  text      — Message to display
- * @param {'correct'|'wrong'} kind — Controls CSS class + colour
- * @param {number}  [ms=2200] — Auto-clear delay in milliseconds
- */
 function showFeedback(text, kind, ms = 2200) {
   clearTimeout(feedbackTimer);
-
   feedbackEl.textContent = text;
   feedbackEl.className   = `feedback ${kind}`;
-
   feedbackTimer = setTimeout(() => {
     feedbackEl.classList.add('fade-out');
     feedbackTimer = setTimeout(() => {
@@ -543,12 +592,8 @@ function showFeedback(text, kind, ms = 2200) {
   }, ms);
 }
 
-/**
- * triggerShake - Briefly animate the input on wrong answer.
- */
 function triggerShake() {
   guessInput.classList.remove('shake');
-  /* force reflow so re-adding the class restarts the animation */
   void guessInput.offsetWidth;
   guessInput.classList.add('shake');
   guessInput.addEventListener('animationend', () => {
@@ -556,34 +601,17 @@ function triggerShake() {
   }, { once: true });
 }
 
-/* ============================================================
- * Submit handler
- * ============================================================ */
-
-/**
- * handleGuess - Evaluate the player's guess against the current word.
- *
- * Comparison is case-insensitive and trims leading/trailing whitespace.
- * On correct guess: update score, show feedback, then pick next word.
- * On wrong guess:   update score, show feedback, shake input.
- *
- * @param {Event} e
- */
 function handleGuess(e) {
   e.preventDefault();
-
   const raw   = guessInput.value;
   const guess = raw.trim().toLowerCase();
-
   if (!guess) return;
 
   const answer = guessState.word.trim().toLowerCase();
-
   if (guess === answer) {
     guessState.scoreCorrect += 1;
     scoreCorrectEl.textContent = String(guessState.scoreCorrect);
     showFeedback('🎉 Benar! Lanjut gambar berikutnya…', 'correct', 1500);
-    /* delay nextWord so player can read the feedback */
     setTimeout(nextWord, 1500);
   } else {
     guessState.scoreWrong += 1;
@@ -597,27 +625,13 @@ function handleGuess(e) {
 guessForm.addEventListener('submit', handleGuess);
 
 /* ============================================================
- * Bootstrap guess box
- * ============================================================ */
-nextWord();
-
-/* ============================================================
  * Chat — Fase 2b
  * ============================================================ */
 
-/* ----- DOM refs ----- */
 const chatForm  = /** @type {HTMLFormElement}  */ (document.getElementById('chatForm'));
 const chatInput = /** @type {HTMLInputElement} */ (document.getElementById('chatInput'));
 const chatList  = /** @type {HTMLOListElement} */ (document.getElementById('chatList'));
 
-/**
- * appendChatMessage - Render one chat bubble into the message list.
- *
- * Self messages align right (blue); peer messages align left (dark).
- * Timestamps are formatted as HH:MM local time.
- *
- * @param {{ text: string, from: string, ts: number, self: boolean }} msg
- */
 function appendChatMessage({ text, from, ts, self }) {
   const li = document.createElement('li');
   li.className = `chat-msg ${self ? 'chat-msg--self' : 'chat-msg--peer'}`;
@@ -631,19 +645,9 @@ function appendChatMessage({ text, from, ts, self }) {
   `;
 
   chatList.appendChild(li);
-
-  /* auto-scroll to latest message */
   chatList.scrollTop = chatList.scrollHeight;
 }
 
-/**
- * escapeHtml - Sanitize user text before inserting as innerHTML.
- *
- * Prevents XSS from chat messages sent by other clients.
- *
- * @param {string} str
- * @returns {string}
- */
 function escapeHtml(str) {
   return str
     .replace(/&/g, '&amp;')
@@ -653,10 +657,8 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-/* receive messages from other tabs/browsers */
 onChatMessage(appendChatMessage);
 
-/* send on form submit */
 chatForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = chatInput.value.trim();
@@ -668,8 +670,6 @@ chatForm.addEventListener('submit', async (e) => {
   try {
     await sendChat(text);
   } catch (err) {
-    /* sendChat already showed the message optimistically;
-       only need to handle the error case */
     appendChatMessage({
       text: `⚠ Gagal kirim: ${err.message}`,
       from: 'system',

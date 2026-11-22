@@ -340,7 +340,7 @@ h1 {
 
 .lobby-card {
   width: 100%;
-  max-width: 480px;
+  max-width: 440px;
   background: #1e293b;
   border-radius: 16px;
   padding: 2rem;
@@ -348,6 +348,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  box-sizing: border-box;
 }
 
 .lobby-heading {
@@ -394,7 +395,7 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0.6rem 1.25rem;
+  padding: 0.65rem 1.25rem;
   border-radius: 10px;
   border: none;
   background: #38bdf8;
@@ -402,12 +403,17 @@ h1 {
   font-weight: 700;
   font-size: 0.95rem;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
   white-space: nowrap;
+  box-sizing: border-box;
 }
 
-.btn-primary:hover  { background: #7dd3fc; }
-.btn-primary:active { transform: scale(0.97); }
+.btn-primary:hover:not(:disabled)  { background: #7dd3fc; }
+.btn-primary:active:not(:disabled) { transform: scale(0.97); }
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .btn-primary.btn-lg {
   padding: 0.75rem 1.75rem;
@@ -415,24 +421,30 @@ h1 {
   align-self: flex-start;
 }
 
-/* ----- join form ----- */
+/* ----- join form: fixed to never overflow card ----- */
 .join-form {
   display: flex;
   gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: stretch;
 }
 
 .join-input {
-  flex: 1;
-  padding: 0.6rem 0.9rem;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
   border-radius: 8px;
   border: 2px solid #334155;
   background: #0f172a;
   color: #f1f5f9;
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.25em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   outline: none;
+  box-sizing: border-box;
   transition: border-color 0.15s;
 }
 
@@ -444,11 +456,32 @@ h1 {
   border-color: #ef4444;
 }
 
+.join-form .btn-primary {
+  flex-shrink: 0;
+  padding: 0.65rem 1.1rem;
+}
+
 .join-error {
-  margin-top: 0.4rem;
+  margin-top: 0.2rem;
   font-size: 0.8rem;
   color: #f87171;
   min-height: 1.1em;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .lobby-card {
+    padding: 1.25rem;
+  }
+  .join-form {
+    flex-direction: column;
+  }
+  .join-form .btn-primary {
+    width: 100%;
+  }
+  .btn-primary.btn-lg {
+    width: 100%;
+  }
 }
 
 /* ============================================================
@@ -531,6 +564,66 @@ h1 {
 .btn-leave:hover {
   border-color: #ef4444;
   color: #ef4444;
+}
+
+/* role toggle button (Fase 2c) */
+.btn-role {
+  padding: 0.35rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #0284c7;
+  background: #0369a1;
+  color: #f0f9ff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, border-color 0.15s;
+}
+
+.btn-role:hover {
+  background: #0284c7;
+}
+
+.btn-role.is-spectator {
+  background: #334155;
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+/* drawing indicator banner (Fase 2c) */
+.drawing-indicator {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.drawing-indicator.is-peer-drawing {
+  background: #1e3a5f;
+  border-color: #38bdf8;
+  color: #7dd3fc;
+  font-weight: 600;
+}
+
+/* spectator mode canvas state */
+.canvas-wrapper.is-spectator .toolbar {
+  opacity: 0.45;
+  pointer-events: none;
+  filter: grayscale(0.8);
+}
+
+.canvas-wrapper.is-spectator #drawCanvas {
+  cursor: not-allowed;
+  touch-action: auto;
+}
+
+.canvas-wrapper.is-spectator #brushCursor {
+  display: none !important;
 }
 
 /* ============================================================

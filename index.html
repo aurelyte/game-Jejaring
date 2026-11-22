@@ -42,12 +42,14 @@
                 spellcheck="false"
                 aria-label="Kode room"
               />
-              <button type="submit" class="btn-primary">
+              <button type="submit" id="btnJoinRoom" class="btn-primary">
                 Masuk →
               </button>
             </form>
-            <p id="joinError" class="join-error" aria-live="polite"></p>
           </div>
+
+          <!-- pesan error / status lobby -->
+          <p id="joinError" class="join-error" aria-live="polite"></p>
         </div>
 
       </section>
@@ -57,7 +59,7 @@
            ===================================================== -->
       <div id="gameScreen" class="game-screen hidden">
 
-        <!-- status bar: room code + koneksi + jumlah pemain -->
+        <!-- status bar: room code + koneksi + jumlah pemain + role toggle -->
         <div class="room-bar" id="roomBar">
           <span class="room-info">
             Room: <strong id="roomCodeDisplay">—</strong>
@@ -68,15 +70,24 @@
           <span class="conn-badge" id="connBadge" data-status="disconnected">
             ⬤ Menghubungkan…
           </span>
+          <!-- role toggle: penggambar vs penonton -->
+          <button id="btnRoleToggle" class="btn-role" title="Klik untuk beralih mode menggambar/menonton">
+            🎨 Peran: Penggambar
+          </button>
           <button id="btnLeaveRoom" class="btn-leave" title="Keluar dari room">
             Keluar ✕
           </button>
         </div>
 
+        <!-- banner penanda siapa yang sedang gambar -->
+        <div id="drawingIndicator" class="drawing-indicator" aria-live="polite">
+          🎨 Mode Aktif: Anda bisa menggambar di canvas
+        </div>
+
         <!-- canvas gambar -->
-        <div class="canvas-wrapper">
+        <div class="canvas-wrapper" id="canvasWrapper">
           <!-- toolbar: warna, ukuran kuas, clear -->
-          <div class="toolbar">
+          <div class="toolbar" id="canvasToolbar">
             <div class="tool-group" role="group" aria-label="Pilih warna">
               <label class="sr-only">Warna</label>
               <button class="swatch active" data-color="#f1f5f9"  style="background:#f1f5f9"  title="Putih"  aria-label="Putih"></button>
