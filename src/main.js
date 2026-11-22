@@ -35,6 +35,9 @@ import {
   sendGuessAttempt,
   sendGuessResult,
   sendTurnChange,
+  sendPowerupRequest,
+  sendPowerupApplied,
+  sendPowerupEnd,
   onStatusChange,
   onMemberChange,
   onChatMessage,
@@ -44,6 +47,9 @@ import {
   onGuessAttempt,
   onGuessResult,
   onTurnChange,
+  onPowerupRequest,
+  onPowerupApplied,
+  onPowerupEnd,
   getSelfKey,
   getRoomMemberKeys,
 } from './room.js';
@@ -81,6 +87,16 @@ const scoreState = {
   wrong:   0,
 };
 
+/* State power-up lokal pada client (Fase 4b & 4c) */
+const powerupState = {
+  usedRevealThisTurn: false,
+  usedFreezeThisTurn: false,
+  usedTimeThisTurn:   false,
+  isFrozen:           false,
+};
+
+let localFreezeInterval = null;
+
 /* stroke batching buffer (Fase 2c) */
 let currentBatchPoints = [];
 let batchIntervalId    = null;
@@ -109,6 +125,13 @@ const hostState = {
   timerInterval:      null,
   secondsRemaining:   60,
   isRoundEnding:      false,
+  currentHint:        null,      // { length: number, slots: string[] }
+  usedRevealPlayers:  new Set(), // daftar pemain yang sudah pakai reveal di ronde ini
+  usedFreezePlayers:  new Set(), // daftar pemain yang sudah pakai freeze di ronde ini
+  usedTimeThisTurn:   false,     // flag powerup tambah waktu untuk drawer
+  freezeTimeout:      null,      // timer timeout host untuk durasi beku 5s
+  freezeUntil:        0,         // timestamp berakhirnya efek beku
+  freezeInitiator:    null,      // ID pemain yang membekukan tebakan lawan
 };
 
 /* ============================================================
@@ -154,6 +177,15 @@ const feedbackEl       = /** @type {HTMLParagraphElement} */ (document.getElemen
 const scoreCorrectEl   = /** @type {HTMLElement}       */ (document.getElementById('scoreCorrect'));
 const scoreWrongEl     = /** @type {HTMLElement}       */ (document.getElementById('scoreWrong'));
 
+/* Power-up elements (Fase 4b & 4c) */
+const powerupBar       = /** @type {HTMLElement}       */ (document.getElementById('powerupBar'));
+const btnPowerupReveal = /** @type {HTMLButtonElement}  */ (document.getElementById('btnPowerupReveal'));
+const btnPowerupFreeze = /** @type {HTMLButtonElement}  */ (document.getElementById('btnPowerupFreeze'));
+const btnPowerupTime   = /** @type {HTMLButtonElement}  */ (document.getElementById('btnPowerupTime'));
+const freezeOverlay    = /** @type {HTMLElement}       */ (document.getElementById('freezeOverlay'));
+const freezeNoticeText = /** @type {HTMLElement}       */ (document.getElementById('freezeNoticeText'));
+const freezeTimerBadge = /** @type {HTMLElement}       */ (document.getElementById('freezeTimerBadge'));
+
 /* Chat */
 const chatForm         = /** @type {HTMLFormElement}   */ (document.getElementById('chatForm'));
 const chatInput        = /** @type {HTMLInputElement}  */ (document.getElementById('chatInput'));
@@ -181,12 +213,27 @@ async function showLobby() {
   clearInterval(hostState.timerInterval);
   clearInterval(localTimerInterval);
   clearTimeout(nextRoundTimer);
+  clearTimeout(hostState.freezeTimeout);
+  clearInterval(localFreezeInterval);
+  unfreezeUI();
 
   state.isHost            = false;
   state.isDrawer          = false;
   state.currentDrawerId   = '';
   hostState.secretWord    = '';
   hostState.playerOrder   = [];
+  hostState.currentHint   = null;
+  hostState.usedRevealPlayers.clear();
+  hostState.usedFreezePlayers.clear();
+  hostState.usedTimeThisTurn = false;
+  hostState.freezeUntil      = 0;
+  hostState.freezeInitiator  = null;
+
+  powerupState.usedRevealThisTurn = false;
+  powerupState.usedFreezeThisTurn = false;
+  powerupState.usedTimeThisTurn   = false;
+  powerupState.isFrozen           = false;
+
   scoreState.correct      = 0;
   scoreState.wrong        = 0;
   scoreCorrectEl.textContent = '0';
@@ -228,7 +275,13 @@ function hostStartNextTurn() {
 
   clearInterval(hostState.timerInterval);
   clearTimeout(nextRoundTimer);
-  hostState.isRoundEnding = false;
+  clearTimeout(hostState.freezeTimeout);
+  hostState.isRoundEnding    = false;
+  hostState.freezeUntil      = 0;
+  hostState.freezeInitiator  = null;
+  hostState.usedTimeThisTurn = false;
+  hostState.usedRevealPlayers.clear();
+  hostState.usedFreezePlayers.clear();
 
   /* Sinkronkan daftar pemain dari presence room */
   const members = getRoomMemberKeys();
@@ -258,6 +311,7 @@ function hostStartNextTurn() {
   const cleanLen    = word.replace(/ /g, '').length;
   const maskedSlots = Array.from(word).map((ch) => (ch === ' ' ? ' ' : '_'));
   const hint        = { length: cleanLen, slots: maskedSlots };
+  hostState.currentHint = hint;
 
   /* Bersihkan canvas */
   clearCanvas();
@@ -290,6 +344,9 @@ function hostStartNextTurn() {
 function hostHandleTurnTimeout() {
   if (!state.isHost || hostState.isRoundEnding) return;
   hostState.isRoundEnding = true;
+  clearTimeout(hostState.freezeTimeout);
+  hostState.freezeUntil     = 0;
+  hostState.freezeInitiator = null;
 
   const word = hostState.secretWord;
 
@@ -325,6 +382,11 @@ onGuessAttempt(async ({ guess, from }) => {
   if (!state.isHost || hostState.isRoundEnding) return;
   if (!hostState.secretWord) return;
 
+  /* [FASE 4c]: Tolak tebakan dari pemain yang sedang terkena status beku */
+  if (Date.now() < hostState.freezeUntil && from !== hostState.freezeInitiator) {
+    return;
+  }
+
   const cleanedGuess  = guess.trim().toLowerCase();
   const cleanedAnswer = hostState.secretWord.trim().toLowerCase();
   const isCorrect     = (cleanedGuess === cleanedAnswer);
@@ -341,6 +403,9 @@ onGuessAttempt(async ({ guess, from }) => {
   if (isCorrect) {
     hostState.isRoundEnding = true;
     clearInterval(hostState.timerInterval);
+    clearTimeout(hostState.freezeTimeout);
+    hostState.freezeUntil     = 0;
+    hostState.freezeInitiator = null;
 
     clearTimeout(nextRoundTimer);
     nextRoundTimer = setTimeout(() => {
@@ -382,6 +447,38 @@ function startLocalTimer(duration, startedAt) {
   localTimerInterval = setInterval(tick, 1000);
 }
 
+function applyFreeze(initiatorId, duration) {
+  powerupState.isFrozen = true;
+  guessForm.classList.add('is-frozen');
+  guessInput.disabled = true;
+  guessInput.placeholder = '🧊 Tebakan dibekukan...';
+  freezeOverlay.classList.remove('hidden');
+  freezeNoticeText.textContent = `Tebakan Anda sedang dibekukan oleh Peer ${initiatorId.slice(0, 4)}!`;
+
+  freezeTimerBadge.textContent = `${duration}s`;
+  let secRemaining = duration;
+  clearInterval(localFreezeInterval);
+  localFreezeInterval = setInterval(() => {
+    secRemaining -= 1;
+    if (secRemaining > 0) {
+      freezeTimerBadge.textContent = `${secRemaining}s`;
+    } else {
+      clearInterval(localFreezeInterval);
+    }
+  }, 1000);
+}
+
+function unfreezeUI() {
+  powerupState.isFrozen = false;
+  clearInterval(localFreezeInterval);
+  guessForm.classList.remove('is-frozen');
+  freezeOverlay.classList.add('hidden');
+  if (!state.isDrawer) {
+    guessInput.disabled = false;
+    guessInput.placeholder = 'Ketik tebakanmu…';
+  }
+}
+
 function renderGuesserWordSlots(hint) {
   wordLabelEl.textContent = 'Tebak kata:';
   wordSlotsEl.innerHTML   = '';
@@ -393,11 +490,19 @@ function renderGuesserWordSlots(hint) {
 
   for (const ch of hint.slots) {
     const slot = document.createElement('div');
-    slot.className = ch === ' ' ? 'letter-slot space-gap' : 'letter-slot';
+    if (ch === ' ') {
+      slot.className = 'letter-slot space-gap';
+    } else if (ch !== '_') {
+      slot.className   = 'letter-slot revealed';
+      slot.textContent = ch.toUpperCase();
+    } else {
+      slot.className = 'letter-slot';
+    }
     wordSlotsEl.appendChild(slot);
   }
 
-  wordHintEl.textContent = `(${hint.length} huruf)`;
+  const unrevealed = hint.slots.filter(ch => ch === '_').length;
+  wordHintEl.textContent = `(${hint.length} huruf${unrevealed < hint.length ? `, ${hint.length - unrevealed} terbuka` : ''})`;
 }
 
 /* Event listener 'turn-change' dari Host */
@@ -409,12 +514,24 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
   const isMeDrawer      = (drawerId === getSelfKey());
   state.isDrawer        = isMeDrawer;
 
+  /* Reset status power-up lokal pada giliran baru */
+  powerupState.usedRevealThisTurn = false;
+  powerupState.usedFreezeThisTurn = false;
+  powerupState.usedTimeThisTurn   = false;
+  unfreezeUI();
+
   if (isMeDrawer) {
     /* [DRAWER]: Canvas aktif untuk menggambar, toolbar terbuka */
     canvasWrapper.classList.remove('is-guesser');
     hostGuessNotice.classList.remove('hidden');
     hostGuessNotice.textContent = '🎨 Anda sedang menggambar! Biarkan pemain lain menebak.';
     guessForm.classList.add('hidden');
+
+    /* Tampilkan tombol power-up drawer (Waktu Ekstra), sembunyikan powerup penebak */
+    btnPowerupReveal.classList.add('hidden');
+    btnPowerupFreeze.classList.add('hidden');
+    btnPowerupTime.classList.remove('hidden');
+    btnPowerupTime.disabled = false;
 
     /* Tampilkan kata rahasia yang harus digambar */
     wordLabelEl.textContent = 'Kata untuk digambar:';
@@ -430,6 +547,13 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
     canvasWrapper.classList.add('is-guesser');
     hostGuessNotice.classList.add('hidden');
     guessForm.classList.remove('hidden');
+
+    /* Tampilkan tombol power-up penebak (Intip Huruf & Bekukan Lawan) */
+    btnPowerupReveal.classList.remove('hidden');
+    btnPowerupReveal.disabled = false;
+    btnPowerupFreeze.classList.remove('hidden');
+    btnPowerupFreeze.disabled = false;
+    btnPowerupTime.classList.add('hidden');
 
     /* Tampilkan slot tersensor */
     renderGuesserWordSlots(hint);
@@ -461,6 +585,13 @@ onGuessResult(({ isCorrect, guesserId, guess, word }) => {
   if (isCorrect || guesserId === 'timeout') {
     clearInterval(localTimerInterval);
     updateTimerDisplay(0);
+    unfreezeUI();
+
+    if (state.isHost) {
+      clearTimeout(hostState.freezeTimeout);
+      hostState.freezeUntil     = 0;
+      hostState.freezeInitiator = null;
+    }
   }
 
   if (isCorrect) {
@@ -518,6 +649,171 @@ onGuessResult(({ isCorrect, guesserId, guess, word }) => {
       self: isMyGuess,
     });
   }
+});
+
+/* ============================================================
+ * [AUTHORITATIVE - HOST ONLY] Penanganan Permintaan Power-up (Fase 4b & 4c)
+ * ============================================================ */
+
+onPowerupRequest(async ({ powerup, from }) => {
+  if (!state.isHost || hostState.isRoundEnding) return;
+
+  const currentDrawerId = hostState.playerOrder[hostState.currentDrawerIndex];
+  const isFromDrawer    = (from === currentDrawerId);
+
+  if (powerup === 'reveal-letter') {
+    /* [FASE 4b]: Intip Huruf — Hanya untuk penebak, limit 1x per ronde */
+    if (isFromDrawer) return;
+    if (hostState.usedRevealPlayers.has(from)) return;
+    if (!hostState.currentHint || !hostState.currentHint.slots) return;
+
+    /* Cari indeks slot yang masih tertutup ('_') */
+    const unrevealed = [];
+    hostState.currentHint.slots.forEach((ch, idx) => {
+      if (ch === '_') unrevealed.push(idx);
+    });
+
+    if (unrevealed.length === 0) return;
+
+    /* Pilih acak 1 huruf untuk dibuka */
+    const pickIdx = unrevealed[Math.floor(Math.random() * unrevealed.length)];
+    hostState.currentHint.slots[pickIdx] = hostState.secretWord[pickIdx];
+    hostState.usedRevealPlayers.add(from);
+
+    await sendPowerupApplied({
+      powerup: 'reveal-letter',
+      hint:    hostState.currentHint,
+      from,
+    });
+  } else if (powerup === 'freeze-rivals') {
+    /* [FASE 4c]: Bekukan Lawan — Hanya untuk penebak, durasi 5 detik */
+    if (isFromDrawer) return;
+    if (hostState.usedFreezePlayers.has(from)) return;
+    if (Date.now() < hostState.freezeUntil) return;
+
+    hostState.usedFreezePlayers.add(from);
+    hostState.freezeUntil     = Date.now() + 5000;
+    hostState.freezeInitiator = from;
+
+    await sendPowerupApplied({
+      powerup:     'freeze-rivals',
+      initiatorId: from,
+      duration:    5,
+      from,
+    });
+
+    /* Host melacak durasi efek secara authoritative */
+    clearTimeout(hostState.freezeTimeout);
+    hostState.freezeTimeout = setTimeout(async () => {
+      if (state.isHost && hostState.freezeUntil > 0) {
+        hostState.freezeUntil     = 0;
+        hostState.freezeInitiator = null;
+        await sendPowerupEnd({ powerup: 'freeze-rivals', from: getSelfKey() });
+      }
+    }, 5000);
+  } else if (powerup === 'extra-time') {
+    /* Pelengkap Drawer: Waktu Ekstra +15s */
+    if (!isFromDrawer) return;
+    if (hostState.usedTimeThisTurn) return;
+
+    hostState.usedTimeThisTurn = true;
+    hostState.secondsRemaining = Math.min(60, hostState.secondsRemaining + 15);
+
+    await sendPowerupApplied({
+      powerup:  'extra-time',
+      duration: hostState.secondsRemaining,
+      from,
+    });
+  }
+});
+
+/* ============================================================
+ * [CLIENT - RENDER ONLY] Eksekusi Efek Power-up (Fase 4b & 4c)
+ * ============================================================ */
+
+onPowerupApplied(({ powerup, hint, initiatorId, duration, from, self }) => {
+  if (powerup === 'reveal-letter') {
+    /* Update tampilan slot kata untuk semua penebak */
+    if (!state.isDrawer) {
+      renderGuesserWordSlots(hint);
+    }
+
+    if (self) {
+      powerupState.usedRevealThisTurn = true;
+      btnPowerupReveal.disabled = true;
+      showFeedback('💡 Anda membuka 1 huruf bantuan!', 'correct', 2500);
+    } else {
+      showFeedback(`💡 Peer ${from.slice(0, 4)} membuka 1 huruf bantuan!`, 'correct', 2000);
+    }
+
+    appendChatMessage({
+      text: `💡 [POWER-UP] ${self ? 'Kamu' : `Peer ${from.slice(0, 4)}`} membuka 1 huruf bantuan!`,
+      from: 'system',
+      ts:   Date.now(),
+      self,
+    });
+  } else if (powerup === 'freeze-rivals') {
+    const isMeInitiator = (initiatorId === getSelfKey());
+
+    if (isMeInitiator) {
+      powerupState.usedFreezeThisTurn = true;
+      btnPowerupFreeze.disabled = true;
+      showFeedback('🧊 Anda membekukan lawan selama 5 detik! Ayo tebak!', 'correct', 3000);
+    } else if (!state.isDrawer) {
+      /* Penebak lawan terkena efek beku */
+      applyFreeze(initiatorId, duration || 5);
+    }
+
+    const name = isMeInitiator ? 'Kamu' : `Peer ${initiatorId.slice(0, 4)}`;
+    appendChatMessage({
+      text: `🧊 [POWER-UP] ${name} membekukan tebakan semua lawan selama ${duration || 5}s!`,
+      from: 'system',
+      ts:   Date.now(),
+      self: isMeInitiator,
+    });
+  } else if (powerup === 'extra-time') {
+    startLocalTimer(duration, Date.now());
+    showFeedback('⏰ Waktu giliran ditambah +15 detik!', 'correct', 2500);
+
+    if (self) {
+      powerupState.usedTimeThisTurn = true;
+      btnPowerupTime.disabled = true;
+    }
+
+    const name = self ? 'Kamu' : `Peer ${from.slice(0, 4)}`;
+    appendChatMessage({
+      text: `⏰ [POWER-UP] ${name} menambahkan +15 detik ke waktu giliran!`,
+      from: 'system',
+      ts:   Date.now(),
+      self,
+    });
+  }
+});
+
+onPowerupEnd(({ powerup }) => {
+  if (powerup === 'freeze-rivals') {
+    unfreezeUI();
+    showFeedback('❄ Efek beku telah selesai!', 'correct', 1500);
+  }
+});
+
+/* Tombol power-up listeners */
+btnPowerupReveal.addEventListener('click', () => {
+  if (state.isDrawer || powerupState.usedRevealThisTurn || powerupState.isFrozen) return;
+  btnPowerupReveal.disabled = true;
+  sendPowerupRequest('reveal-letter');
+});
+
+btnPowerupFreeze.addEventListener('click', () => {
+  if (state.isDrawer || powerupState.usedFreezeThisTurn || powerupState.isFrozen) return;
+  btnPowerupFreeze.disabled = true;
+  sendPowerupRequest('freeze-rivals');
+});
+
+btnPowerupTime.addEventListener('click', () => {
+  if (!state.isDrawer || powerupState.usedTimeThisTurn) return;
+  btnPowerupTime.disabled = true;
+  sendPowerupRequest('extra-time');
 });
 
 /* ============================================================
@@ -988,6 +1284,12 @@ function triggerShake() {
 
 guessForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (powerupState.isFrozen) {
+    showFeedback('🧊 Anda sedang dibekukan! Tunggu efek beku berakhir.', 'wrong', 1600);
+    triggerShake();
+    return;
+  }
+
   const raw = guessInput.value.trim();
   if (!raw) return;
 

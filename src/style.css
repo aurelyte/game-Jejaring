@@ -241,6 +241,17 @@ h1 {
   transition: border-color 0.2s;
 }
 
+.letter-slot.revealed {
+  border-bottom-color: #38bdf8;
+  color: #38bdf8;
+  animation: slotPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes slotPop {
+  0%   { transform: translateY(4px) scale(0.85); opacity: 0.5; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
 .letter-slot.space-gap {
   width: 10px;
   border-bottom: none;
@@ -250,6 +261,142 @@ h1 {
 .word-hint {
   font-size: 0.75rem;
   color: #64748b;
+}
+
+/* ============================================================
+ * Power-up Bar (Fase 4b & 4c)
+ * ============================================================ */
+.powerup-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+.powerup-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-right: 0.25rem;
+}
+
+.btn-powerup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #f1f5f9;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-powerup:hover:not(:disabled) {
+  background: #334155;
+  border-color: #64748b;
+  transform: translateY(-1px);
+}
+
+.btn-powerup:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-powerup:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+}
+
+.btn-powerup--reveal {
+  border-color: #f59e0b;
+  color: #fef3c7;
+}
+
+.btn-powerup--reveal:hover:not(:disabled) {
+  background: #78350f;
+  border-color: #f59e0b;
+}
+
+.btn-powerup--freeze {
+  border-color: #06b6d4;
+  color: #cffafe;
+}
+
+.btn-powerup--freeze:hover:not(:disabled) {
+  background: #164e63;
+  border-color: #06b6d4;
+}
+
+.btn-powerup--time {
+  border-color: #10b981;
+  color: #d1fae5;
+}
+
+.btn-powerup--time:hover:not(:disabled) {
+  background: #064e3b;
+  border-color: #10b981;
+}
+
+.powerup-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+/* ----- Freeze overlay & states (Fase 4c) ----- */
+.freeze-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(14, 165, 233, 0.35));
+  border: 1px solid #38bdf8;
+  color: #e0f2fe;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
+  animation: freezeGlow 1.5s infinite alternate;
+}
+
+@keyframes freezeGlow {
+  0% { box-shadow: 0 0 8px rgba(56, 189, 248, 0.2); }
+  100% { box-shadow: 0 0 20px rgba(56, 189, 248, 0.5); }
+}
+
+.freeze-icon {
+  font-size: 1.1rem;
+}
+
+.freeze-timer {
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: #0284c7;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.guess-form.is-frozen {
+  opacity: 0.6;
+  pointer-events: none;
+  filter: grayscale(0.5);
+  border-radius: 8px;
+  position: relative;
 }
 
 /* ----- guess form ----- */

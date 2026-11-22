@@ -151,6 +151,27 @@
             🎨 Anda sedang menggambar kata rahasia. Biarkan pemain lain menebaknya!
           </p>
 
+          <!-- Power-up Bar (Fase 4b & 4c) -->
+          <div class="powerup-bar" id="powerupBar" aria-label="Power-up">
+            <span class="powerup-title">⚡ Power-up:</span>
+            <button id="btnPowerupReveal" class="btn-powerup btn-powerup--reveal" title="Buka 1 huruf acak bantuan (1x per ronde)">
+              💡 Intip Huruf <span class="powerup-badge">1x</span>
+            </button>
+            <button id="btnPowerupFreeze" class="btn-powerup btn-powerup--freeze" title="Kunci tebakan lawan selama 5 detik (1x per ronde)">
+              🧊 Bekukan Lawan <span class="powerup-badge">5s</span>
+            </button>
+            <button id="btnPowerupTime" class="btn-powerup btn-powerup--time hidden" title="Tambah waktu menggambar +15 detik (1x per giliran)">
+              ⏰ Tambah Waktu <span class="powerup-badge">+15s</span>
+            </button>
+          </div>
+
+          <!-- Freeze indicator banner saat terkena efek beku (Fase 4c) -->
+          <div id="freezeOverlay" class="freeze-overlay hidden" aria-live="assertive">
+            <span class="freeze-icon">🧊</span>
+            <span id="freezeNoticeText">Tebakan Anda sedang dibekukan oleh lawan!</span>
+            <span id="freezeTimerBadge" class="freeze-timer">5s</span>
+          </div>
+
           <!-- form tebak (aktif untuk non-host/penebak) -->
           <form class="guess-form" id="guessForm" autocomplete="off" novalidate>
             <input

@@ -18,6 +18,9 @@
  *   sendGuessAttempt(guess)     → broadcast {type:'guess-attempt', guess, from, ts}
  *   sendGuessResult(result)     → broadcast {type:'guess-result', ...result, from, ts}
  *   sendTurnChange(payload)     → broadcast {type:'turn-change', ...payload, from, ts}
+ *   sendPowerupRequest(powerup) → broadcast {type:'powerup-request', powerup, from, ts}
+ *   sendPowerupApplied(payload) → broadcast {type:'powerup-applied', ...payload, from, ts}
+ *   sendPowerupEnd(payload)     → broadcast {type:'powerup-end', ...payload, from, ts}
  *   onStatusChange(fn)          → 'connecting'|'connected'|'disconnected'|'error'
  *   onMemberChange(fn)          → (count, keys)
  *   onChatMessage(fn)           → {text, from, ts, self}
@@ -27,6 +30,9 @@
  *   onGuessAttempt(fn)          → {guess, from, ts, self}
  *   onGuessResult(fn)           → {isCorrect, guesserId, guess, word, from, ts, self}
  *   onTurnChange(fn)            → {drawerId, drawerWord, hint, duration, startedAt, from, ts, self}
+ *   onPowerupRequest(fn)        → {powerup, from, ts, self}
+ *   onPowerupApplied(fn)        → {powerup, from, hint, initiatorId, duration, ts, self}
+ *   onPowerupEnd(fn)            → {powerup, from, ts, self}
  *   currentRoom()               → room code | null
  *   generateRoomCode()          → random 6-char code
  *   getSelfKey()                → string short id
@@ -75,6 +81,15 @@ const _guessResultListeners = [];
 /** @type {Array<(msg: {drawerId: string, drawerWord: string, hint: any, duration: number, startedAt: number, from: string, ts: number, self: boolean}) => void>} */
 const _turnChangeListeners = [];
 
+/** @type {Array<(msg: {powerup: string, from: string, ts: number, self: boolean}) => void>} */
+const _powerupRequestListeners = [];
+
+/** @type {Array<(msg: {powerup: string, from: string, hint?: any, initiatorId?: string, duration?: number, ts: number, self: boolean}) => void>} */
+const _powerupAppliedListeners = [];
+
+/** @type {Array<(msg: {powerup: string, from: string, ts: number, self: boolean}) => void>} */
+const _powerupEndListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
@@ -106,6 +121,15 @@ export function onGuessResult(fn) { _guessResultListeners.push(fn); }
 /** @param {(msg: {drawerId: string, drawerWord: string, hint: any, duration: number, startedAt: number, from: string, ts: number, self: boolean}) => void} fn */
 export function onTurnChange(fn) { _turnChangeListeners.push(fn); }
 
+/** @param {(msg: {powerup: string, from: string, ts: number, self: boolean}) => void} fn */
+export function onPowerupRequest(fn) { _powerupRequestListeners.push(fn); }
+
+/** @param {(msg: {powerup: string, from: string, hint?: any, initiatorId?: string, duration?: number, ts: number, self: boolean}) => void} fn */
+export function onPowerupApplied(fn) { _powerupAppliedListeners.push(fn); }
+
+/** @param {(msg: {powerup: string, from: string, ts: number, self: boolean}) => void} fn */
+export function onPowerupEnd(fn) { _powerupEndListeners.push(fn); }
+
 function _emitStatus(s)         { _statusListeners.forEach((fn) => fn(s)); }
 function _emitMembers(n, keys)  { _memberListeners.forEach((fn) => fn(n, keys)); }
 function _emitChat(msg)         { _chatListeners.forEach((fn) => fn(msg)); }
@@ -115,6 +139,9 @@ function _emitNewWord(msg)      { _newWordListeners.forEach((fn) => fn(msg)); }
 function _emitGuessAttempt(msg) { _guessAttemptListeners.forEach((fn) => fn(msg)); }
 function _emitGuessResult(msg)  { _guessResultListeners.forEach((fn) => fn(msg)); }
 function _emitTurnChange(msg)   { _turnChangeListeners.forEach((fn) => fn(msg)); }
+function _emitPowerupRequest(msg) { _powerupRequestListeners.forEach((fn) => fn(msg)); }
+function _emitPowerupApplied(msg) { _powerupAppliedListeners.forEach((fn) => fn(msg)); }
+function _emitPowerupEnd(msg)     { _powerupEndListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
  * Helpers
@@ -279,6 +306,35 @@ export function joinRoom(roomCode) {
         from:       payload.from,
         ts:         payload.ts,
         self:       payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: powerup-request from Client to Host (Fase 4b/4c) ---- */
+    _channel.on('broadcast', { event: 'powerup-request' }, ({ payload }) => {
+      if (!payload) return;
+      _emitPowerupRequest({
+        powerup: payload.powerup,
+        from:    payload.from,
+        ts:      payload.ts,
+        self:    payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: powerup-applied from Host to all Clients (Fase 4b/4c) ---- */
+    _channel.on('broadcast', { event: 'powerup-applied' }, ({ payload }) => {
+      if (!payload) return;
+      _emitPowerupApplied({
+        ...payload,
+        self: payload.from === getSelfKey() || payload.initiatorId === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: powerup-end from Host to all Clients (Fase 4c) ---- */
+    _channel.on('broadcast', { event: 'powerup-end' }, ({ payload }) => {
+      if (!payload) return;
+      _emitPowerupEnd({
+        ...payload,
+        self: payload.from === getSelfKey(),
       });
     });
 
@@ -476,6 +532,80 @@ export async function sendTurnChange(payload) {
   await _channel.send({
     type:    'broadcast',
     event:   'turn-change',
+    payload: fullPayload,
+  });
+}
+
+/* ============================================================
+ * Broadcast: Power-up (Fase 4b & 4c)
+ * ============================================================ */
+
+/**
+ * sendPowerupRequest - Client requests a powerup from Host.
+ *
+ * @param {string} powerup - 'reveal-letter' | 'freeze-rivals' | 'extra-time'
+ */
+export async function sendPowerupRequest(powerup) {
+  if (!_channel) return;
+
+  const payload = {
+    powerup,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  /* Host juga memicu listener lokal jika pengirim adalah host */
+  _emitPowerupRequest({ ...payload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'powerup-request',
+    payload,
+  });
+}
+
+/**
+ * sendPowerupApplied - Host broadcasts applied powerup effect.
+ *
+ * @param {object} payload
+ */
+export async function sendPowerupApplied(payload) {
+  if (!_channel) return;
+
+  const fullPayload = {
+    ...payload,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  _emitPowerupApplied({ ...fullPayload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'powerup-applied',
+    payload: fullPayload,
+  });
+}
+
+/**
+ * sendPowerupEnd - Host broadcasts the expiration of a timed powerup.
+ *
+ * @param {object} payload
+ */
+export async function sendPowerupEnd(payload) {
+  if (!_channel) return;
+
+  const fullPayload = {
+    ...payload,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  _emitPowerupEnd({ ...fullPayload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'powerup-end',
     payload: fullPayload,
   });
 }
