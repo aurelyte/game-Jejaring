@@ -10,8 +10,49 @@
   <body>
     <div id="app">
       <h1>Tebak Gambar 🎮</h1>
-      <p>Game sedang dibangun...</p>
+
+      <div class="canvas-wrapper">
+        <!-- toolbar: warna, ukuran kuas, clear -->
+        <div class="toolbar">
+          <div class="tool-group" role="group" aria-label="Pilih warna">
+            <label class="sr-only">Warna</label>
+            <button class="swatch active" data-color="#f1f5f9"  style="background:#f1f5f9"  title="Putih"  aria-label="Putih"></button>
+            <button class="swatch"        data-color="#ef4444"  style="background:#ef4444"  title="Merah"  aria-label="Merah"></button>
+            <button class="swatch"        data-color="#f97316"  style="background:#f97316"  title="Oranye" aria-label="Oranye"></button>
+            <button class="swatch"        data-color="#facc15"  style="background:#facc15"  title="Kuning" aria-label="Kuning"></button>
+            <button class="swatch"        data-color="#4ade80"  style="background:#4ade80"  title="Hijau"  aria-label="Hijau"></button>
+            <button class="swatch"        data-color="#38bdf8"  style="background:#38bdf8"  title="Biru"   aria-label="Biru"></button>
+            <button class="swatch"        data-color="#a78bfa"  style="background:#a78bfa"  title="Ungu"   aria-label="Ungu"></button>
+            <button class="swatch"        data-color="#1e293b"  style="background:#1e293b"  title="Hitam"  aria-label="Hitam"></button>
+            <!-- color picker bebas -->
+            <label class="swatch swatch--picker" title="Warna bebas" aria-label="Pilih warna bebas">
+              🎨
+              <input type="color" id="colorPicker" value="#f1f5f9" />
+            </label>
+          </div>
+
+          <div class="tool-group" role="group" aria-label="Ukuran kuas">
+            <label class="sr-only">Ukuran kuas</label>
+            <button class="size-btn" data-size="4"  title="Kecil"  aria-label="Kecil">S</button>
+            <button class="size-btn active" data-size="12" title="Sedang" aria-label="Sedang">M</button>
+            <button class="size-btn" data-size="28" title="Besar"  aria-label="Besar">L</button>
+          </div>
+
+          <div class="tool-group">
+            <button id="clearBtn" class="btn-clear" title="Hapus semua" aria-label="Hapus canvas">
+              🗑 Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- area gambar -->
+        <canvas id="drawCanvas"></canvas>
+
+        <!-- kursor kustom: ukuran kuas -->
+        <div id="brushCursor" aria-hidden="true"></div>
+      </div>
     </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
