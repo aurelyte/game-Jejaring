@@ -1,16 +1,18 @@
 /**
- * src/room.js — Room lifecycle: create, join, leave
+ * src/room.js — Room lifecycle + broadcast
  *
- * Fase 2a: Supabase Realtime channel per room.
- * Belum ada transfer data gambar/guess — fokus ke presence channel
- * dan status koneksi saja.
+ * Fase 2a: Supabase Realtime Presence channel per room.
+ * Fase 2b: broadcast 'chat' events antar tab/browser di room yang sama.
  *
  * Public API:
- *   joinRoom(roomCode)  → subscribes, returns channel
- *   leaveRoom()         → unsubscribes current channel
- *   onStatusChange(fn)  → register status callback
- *   onMemberChange(fn)  → register member-count callback
- *   currentRoom()       → room code string | null
+ *   joinRoom(roomCode)         → Promise<channel>; resolves on SUBSCRIBED
+ *   leaveRoom()                → unsubscribes + cleans up
+ *   sendChat(text)             → broadcast {type:'chat', text, from, ts}
+ *   onStatusChange(fn)         → 'connecting'|'connected'|'disconnected'|'error'
+ *   onMemberChange(fn)         → number of presence keys in room
+ *   onChatMessage(fn)          → {text, from, ts, self} on every chat event
+ *   currentRoom()              → room code | null
+ *   generateRoomCode()         → random 6-char code
  */
 
 import { supabase } from './supabase.js';
@@ -31,130 +33,154 @@ const _statusListeners = [];
 /** @type {Array<(count: number) => void>} */
 const _memberListeners = [];
 
+/** @type {Array<(msg: {text: string, from: string, ts: number, self: boolean}) => void>} */
+const _chatListeners = [];
+
 /* ============================================================
  * Listener registration
  * ============================================================ */
 
-/**
- * onStatusChange - Register a callback invoked on connection state changes.
- *
- * Possible status strings passed to the callback:
- *   'connecting' | 'connected' | 'disconnected' | 'error'
- *
- * @param {(status: string) => void} fn
- */
-export function onStatusChange(fn) {
-  _statusListeners.push(fn);
-}
+/** @param {(status: string) => void} fn */
+export function onStatusChange(fn) { _statusListeners.push(fn); }
+
+/** @param {(count: number) => void} fn */
+export function onMemberChange(fn) { _memberListeners.push(fn); }
 
 /**
- * onMemberChange - Register a callback invoked when room member count changes.
+ * onChatMessage - Register a callback for incoming chat messages.
  *
- * @param {(count: number) => void} fn
+ * The callback receives:
+ *   text  {string}  — message body
+ *   from  {string}  — sender's presence key (short random id)
+ *   ts    {number}  — Unix ms timestamp
+ *   self  {boolean} — true when this tab sent the message
+ *
+ * @param {(msg: {text: string, from: string, ts: number, self: boolean}) => void} fn
  */
-export function onMemberChange(fn) {
-  _memberListeners.push(fn);
-}
+export function onChatMessage(fn) { _chatListeners.push(fn); }
 
-function _emitStatus(status)  { _statusListeners.forEach((fn) => fn(status)); }
-function _emitMembers(count)  { _memberListeners.forEach((fn) => fn(count));  }
+function _emitStatus(s)  { _statusListeners.forEach((fn) => fn(s)); }
+function _emitMembers(n) { _memberListeners.forEach((fn) => fn(n)); }
+function _emitChat(msg)  { _chatListeners.forEach((fn) => fn(msg)); }
 
 /* ============================================================
- * Room helpers
+ * Helpers
  * ============================================================ */
 
 /**
- * generateRoomCode - Return a random 6-character alphanumeric code.
+ * generateRoomCode - Random 6-char code from unambiguous alphabet.
  *
- * Uses uppercase letters + digits; excludes ambiguous chars (0/O, 1/I/L)
- * so codes are easy to read aloud or type on mobile.
+ * Excludes 0/O, 1/I/L to ease mobile entry and voice sharing.
  *
  * @returns {string}
  */
 export function generateRoomCode() {
-  const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-  }
+  for (let i = 0; i < 6; i++) code += ALPHA[Math.floor(Math.random() * ALPHA.length)];
   return code;
 }
 
-/** currentRoom - Return the active room code, or null if not in a room. */
-export function currentRoom() {
-  return _roomCode;
+/** currentRoom - Active room code, or null. */
+export function currentRoom() { return _roomCode; }
+
+/**
+ * _selfKey - Stable per-tab random identifier stored in sessionStorage.
+ *
+ * Re-used as both the Presence key and the chat 'from' field so peers
+ * can distinguish their own messages from others'.
+ *
+ * @returns {string}
+ */
+function _selfKey() {
+  const K = 'tebak-gambar:presence-key';
+  let k = sessionStorage.getItem(K);
+  if (!k) { k = Math.random().toString(36).slice(2, 10); sessionStorage.setItem(K, k); }
+  return k;
 }
 
 /* ============================================================
- * Join / leave
+ * Join
  * ============================================================ */
 
 /**
- * joinRoom - Subscribe to a Supabase Realtime Presence channel.
+ * joinRoom - Subscribe to a Supabase Realtime channel and return a
+ * Promise that resolves only when the WebSocket is SUBSCRIBED.
  *
- * Channel name: `room:{roomCode}` (e.g. "room:AB3X7Q").
- * Presence is used so each tab knows how many peers share the room.
+ * Fix vs fase 2a: previously joinRoom() returned a channel reference
+ * immediately (before the WebSocket handshake completed), so
+ * enterRoom() called showGame() while the canvas wrapper was still
+ * hidden, making offsetWidth = 0 and collapsing the canvas to 0 px.
  *
- * Steps:
- *   1. Leave any existing channel.
- *   2. Create a new Presence channel for the room.
- *   3. Subscribe; on SUBSCRIBED emit 'connected' and track presence.
- *   4. Listen to presence sync events to maintain member count.
+ * Now the Promise rejects on CHANNEL_ERROR / TIMED_OUT so the lobby
+ * can show a proper error message instead of silently breaking.
  *
  * @param {string} roomCode
  * @returns {Promise<import('@supabase/supabase-js').RealtimeChannel>}
  */
-export async function joinRoom(roomCode) {
-  /* normalise: uppercase, strip whitespace */
+export function joinRoom(roomCode) {
   const code = roomCode.trim().toUpperCase();
 
-  /* leave previous room if any */
-  await leaveRoom();
+  return new Promise(async (resolve, reject) => {
+    /* leave existing channel first */
+    await leaveRoom();
 
-  _roomCode = code;
-  _emitStatus('connecting');
+    _roomCode = code;
+    _emitStatus('connecting');
 
-  _channel = supabase.channel(`room:${code}`, {
-    config: { presence: { key: _selfKey() } },
+    _channel = supabase.channel(`room:${code}`, {
+      config: { presence: { key: _selfKey() } },
+    });
+
+    /* ---- Presence: member count ---- */
+    _channel.on('presence', { event: 'sync' }, () => {
+      const state = _channel.presenceState();
+      _emitMembers(Object.keys(state).length);
+    });
+
+    /* ---- Broadcast: chat messages ---- */
+    _channel.on('broadcast', { event: 'chat' }, ({ payload }) => {
+      _emitChat({
+        text: payload.text,
+        from: payload.from,
+        ts:   payload.ts,
+        self: payload.from === _selfKey(),
+      });
+    });
+
+    /* ---- Subscribe → resolve/reject the Promise ---- */
+    _channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        _emitStatus('connected');
+        await _channel.track({ joined_at: Date.now() });
+        resolve(_channel);                   /* ← Promise resolves HERE */
+      } else if (status === 'CHANNEL_ERROR') {
+        _emitStatus('error');
+        reject(new Error('Channel error — periksa kredensial Supabase.'));
+      } else if (status === 'TIMED_OUT') {
+        _emitStatus('disconnected');
+        reject(new Error('Koneksi timeout — coba lagi.'));
+      } else if (status === 'CLOSED') {
+        _emitStatus('disconnected');
+      }
+    });
   });
-
-  /* Presence sync → update member count */
-  _channel.on('presence', { event: 'sync' }, () => {
-    const state = _channel.presenceState();
-    _emitMembers(Object.keys(state).length);
-  });
-
-  /* Subscribe and handle connection state */
-  _channel.subscribe(async (status) => {
-    if (status === 'SUBSCRIBED') {
-      _emitStatus('connected');
-      /* announce ourselves in the presence map */
-      await _channel.track({ joined_at: Date.now() });
-    } else if (status === 'CHANNEL_ERROR') {
-      _emitStatus('error');
-    } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
-      _emitStatus('disconnected');
-    }
-  });
-
-  return _channel;
 }
 
+/* ============================================================
+ * Leave
+ * ============================================================ */
+
 /**
- * leaveRoom - Untrack presence and unsubscribe from the current channel.
- *
- * Safe to call when not in a room (no-op).
+ * leaveRoom - Untrack presence and tear down the channel.
+ * Safe to call when no room is active (no-op).
  */
 export async function leaveRoom() {
   if (!_channel) return;
-
   try {
     await _channel.untrack();
     await supabase.removeChannel(_channel);
-  } catch (_) {
-    /* ignore errors on cleanup */
-  }
-
+  } catch (_) { /* ignore cleanup errors */ }
   _channel  = null;
   _roomCode = null;
   _emitStatus('disconnected');
@@ -162,23 +188,30 @@ export async function leaveRoom() {
 }
 
 /* ============================================================
- * Internal helpers
+ * Chat broadcast
  * ============================================================ */
 
 /**
- * _selfKey - Stable random key for this browser tab's presence entry.
+ * sendChat - Broadcast a chat message to all peers in the room.
  *
- * Generated once per module load so refreshing re-uses the same key
- * within the same session (stored in sessionStorage).
+ * Uses channel.send() with type:'broadcast' and event:'chat'.
+ * The sender also receives their own message via _emitChat so the
+ * local UI updates immediately without waiting for the echo.
  *
- * @returns {string}
+ * @param {string} text — raw message text (caller should trim)
+ * @returns {Promise<void>}
  */
-function _selfKey() {
-  const STORAGE_KEY = 'tebak-gambar:presence-key';
-  let key = sessionStorage.getItem(STORAGE_KEY);
-  if (!key) {
-    key = Math.random().toString(36).slice(2, 10);
-    sessionStorage.setItem(STORAGE_KEY, key);
-  }
-  return key;
+export async function sendChat(text) {
+  if (!_channel) throw new Error('Belum terhubung ke room.');
+
+  const payload = { text, from: _selfKey(), ts: Date.now() };
+
+  /* optimistic: show own message immediately */
+  _emitChat({ ...payload, self: true });
+
+  await _channel.send({
+    type:    'broadcast',
+    event:   'chat',
+    payload,
+  });
 }

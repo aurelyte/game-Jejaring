@@ -152,6 +152,30 @@
           </p>
         </section>
 
+        <!-- ===================================================
+             Chat panel (Fase 2b) — broadcast test
+             =================================================== -->
+        <section class="chat-section" aria-label="Chat room">
+          <h2 class="chat-heading">💬 Chat Room</h2>
+
+          <!-- message list -->
+          <ol id="chatList" class="chat-list" aria-live="polite" aria-label="Pesan chat"></ol>
+
+          <!-- send form -->
+          <form id="chatForm" class="chat-form" autocomplete="off" novalidate>
+            <input
+              type="text"
+              id="chatInput"
+              class="chat-input"
+              placeholder="Ketik pesan…"
+              maxlength="200"
+              aria-label="Ketik pesan chat"
+              spellcheck="false"
+            />
+            <button type="submit" class="btn-chat-send">Kirim</button>
+          </form>
+        </section>
+
       </div><!-- /#gameScreen -->
     </div><!-- /#app -->
 

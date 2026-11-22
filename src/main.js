@@ -4,6 +4,7 @@
  * Fase 1b: canvas gambar lokal, 100% client-side.
  * Fase 1c: guess box lokal — tebak kata hardcoded, belum multiplayer.
  * Fase 2a: Supabase Realtime room — lobby, join/create, status koneksi.
+ * Fase 2b: broadcast 'chat' — uji dua-arah sebelum stroke gambar.
  * Native Canvas API, tanpa library eksternal.
  *
  * Fitur:
@@ -23,8 +24,10 @@ import {
   generateRoomCode,
   joinRoom,
   leaveRoom,
+  sendChat,
   onStatusChange,
   onMemberChange,
+  onChatMessage,
 } from './room.js';
 
 /* ============================================================
@@ -597,3 +600,81 @@ guessForm.addEventListener('submit', handleGuess);
  * Bootstrap guess box
  * ============================================================ */
 nextWord();
+
+/* ============================================================
+ * Chat — Fase 2b
+ * ============================================================ */
+
+/* ----- DOM refs ----- */
+const chatForm  = /** @type {HTMLFormElement}  */ (document.getElementById('chatForm'));
+const chatInput = /** @type {HTMLInputElement} */ (document.getElementById('chatInput'));
+const chatList  = /** @type {HTMLOListElement} */ (document.getElementById('chatList'));
+
+/**
+ * appendChatMessage - Render one chat bubble into the message list.
+ *
+ * Self messages align right (blue); peer messages align left (dark).
+ * Timestamps are formatted as HH:MM local time.
+ *
+ * @param {{ text: string, from: string, ts: number, self: boolean }} msg
+ */
+function appendChatMessage({ text, from, ts, self }) {
+  const li = document.createElement('li');
+  li.className = `chat-msg ${self ? 'chat-msg--self' : 'chat-msg--peer'}`;
+
+  const time  = new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const label = self ? 'Kamu' : `Peer ${from.slice(0, 4)}`;
+
+  li.innerHTML = `
+    <div class="chat-bubble">${escapeHtml(text)}</div>
+    <span class="chat-meta">${escapeHtml(label)} · ${time}</span>
+  `;
+
+  chatList.appendChild(li);
+
+  /* auto-scroll to latest message */
+  chatList.scrollTop = chatList.scrollHeight;
+}
+
+/**
+ * escapeHtml - Sanitize user text before inserting as innerHTML.
+ *
+ * Prevents XSS from chat messages sent by other clients.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* receive messages from other tabs/browsers */
+onChatMessage(appendChatMessage);
+
+/* send on form submit */
+chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  chatInput.value = '';
+  chatInput.focus();
+
+  try {
+    await sendChat(text);
+  } catch (err) {
+    /* sendChat already showed the message optimistically;
+       only need to handle the error case */
+    appendChatMessage({
+      text: `⚠ Gagal kirim: ${err.message}`,
+      from: 'system',
+      ts:   Date.now(),
+      self: false,
+    });
+  }
+});
