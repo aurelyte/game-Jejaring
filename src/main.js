@@ -133,12 +133,63 @@ let isBatchStart       = false;
  */
 
 const WORD_LIST = [
-  'kucing', 'anjing', 'rumah', 'pohon', 'mobil',
-  'sepeda', 'matahari', 'bulan', 'bintang', 'awan',
-  'hujan', 'gunung', 'laut', 'pantai', 'kapal',
-  'pesawat', 'buku', 'pensil', 'payung', 'topi',
-  'bunga', 'apel', 'pisang', 'jeruk', 'nasi',
-  'pizza', 'roti', 'kunci', 'jam', 'telepon',
+  // Hewan
+  'kucing', 'anjing', 'kelinci', 'hamster', 'marmot', 'ular', 'buaya', 'kura-kura',
+  'harimau', 'singa', 'gajah', 'jerapah', 'zebra', 'kuda', 'sapi', 'kambing',
+  'domba', 'babi', 'ayam', 'bebek', 'angsa', 'kalkun', 'merpati', 'elang',
+  'kakak tua', 'katak', 'kodok', 'ikan', 'lumba-lumba', 'paus', 'hiu', 'gurita',
+  'ubur-ubur', 'kepiting', 'udang', 'cumi-cumi', 'bintang laut', 'kuda laut',
+  'lebah', 'kupu-kupu', 'capung', 'kecoa', 'semut', 'laba-laba', 'kalajengking',
+  'rusa', 'beruang', 'serigala', 'rubah', 'tikus', 'tupai', 'monyet', 'gorila',
+  'orangutan', 'koala', 'kanguru', 'platipus', 'merak', 'flamingo', 'pinguin',
+  'burung hantu', 'kelelawar', 'musang', 'berang-berang',
+  // Buah & Sayuran
+  'apel', 'pisang', 'jeruk', 'mangga', 'nanas', 'semangka', 'melon', 'pepaya',
+  'anggur', 'strawberi', 'ceri', 'kiwi', 'alpukat', 'kelapa', 'durian',
+  'rambutan', 'manggis', 'salak', 'jambu', 'belimbing', 'sirsak', 'kurma',
+  'tomat', 'wortel', 'kentang', 'bawang', 'kol', 'brokoli', 'bayam', 'kangkung',
+  'terong', 'labu', 'jagung', 'kacang', 'timun', 'selada', 'cabai', 'jahe',
+  'kunyit', 'sereh',
+  // Makanan & Minuman
+  'nasi', 'roti', 'pizza', 'bakso', 'soto', 'rendang', 'sate', 'gado-gado',
+  'mie', 'kwetiau', 'nasi goreng', 'tempe', 'tahu', 'kerupuk', 'sambal',
+  'kecap', 'susu', 'teh', 'kopi', 'jus', 'sirop', 'es krim', 'kue', 'coklat',
+  'permen', 'biskuit', 'donat', 'roti bakar', 'telur', 'ikan goreng', 'ayam goreng',
+  // Benda Rumah
+  'meja', 'kursi', 'lemari', 'kasur', 'bantal', 'selimut', 'cermin', 'lampu',
+  'kipas', 'televisi', 'kulkas', 'kompor', 'wajan', 'panci', 'sendok', 'garpu',
+  'pisau', 'piring', 'gelas', 'cangkir', 'teko', 'sapu', 'ember', 'kunci',
+  'gembok', 'pintu', 'jendela', 'tangga', 'atap', 'genteng',
+  // Transportasi
+  'mobil', 'motor', 'sepeda', 'bus', 'truk', 'kapal', 'pesawat', 'helikopter',
+  'kereta', 'becak', 'bajaj', 'taksi', 'ambulans', 'pemadam kebakaran', 'traktor',
+  'perahu', 'kapal selam', 'roket', 'balon udara',
+  // Alam & Lingkungan
+  'matahari', 'bulan', 'bintang', 'awan', 'hujan', 'petir', 'pelangi', 'angin',
+  'gunung', 'bukit', 'lembah', 'sungai', 'danau', 'laut', 'pantai', 'pulau',
+  'hutan', 'padang', 'gurun', 'salju', 'volcano', 'tebing', 'batu', 'pasir',
+  // Pakaian & Aksesori
+  'baju', 'celana', 'rok', 'gaun', 'jaket', 'mantel', 'topi', 'sepatu', 'sandal',
+  'kaos kaki', 'sarung tangan', 'kacamata', 'jam tangan', 'cincin', 'kalung',
+  'gelang', 'sabuk', 'dompet', 'tas', 'payung', 'scarf',
+  // Benda Tulis & Teknologi
+  'buku', 'pensil', 'pena', 'penghapus', 'penggaris', 'gunting', 'lem', 'kertas',
+  'telepon', 'kamera', 'komputer', 'laptop', 'tablet', 'printer', 'keyboard',
+  'mouse', 'headphone', 'baterai', 'kabel', 'colokan',
+  // Profesi & Orang
+  'dokter', 'guru', 'polisi', 'tentara', 'petani', 'nelayan', 'koki', 'pilot',
+  'astronot', 'pelukis', 'musisi', 'penari', 'atlet', 'ilmuwan', 'insinyur',
+  // Olahraga & Hobi
+  'bola', 'raket', 'gawang', 'kolam renang', 'sepatu roda', 'skateboard',
+  'gitar', 'piano', 'drum', 'biola', 'kamera foto', 'memancing',
+  // Bangunan & Tempat
+  'rumah', 'apartemen', 'sekolah', 'kantor', 'pasar', 'toko', 'restoran',
+  'rumah sakit', 'stasiun', 'bandara', 'pelabuhan', 'masjid', 'gereja', 'pura',
+  'museum', 'perpustakaan', 'taman', 'kebun binatang', 'pantai', 'gunung',
+  // Lain-lain
+  'jam', 'api', 'air', 'es', 'garam', 'gula', 'madu', 'lilin', 'balon',
+  'bendera', 'bola lampu', 'kunci pas', 'palu', 'obeng', 'gergaji', 'kawat',
+  'magnet', 'teropong', 'kompas', 'peta', 'globe', 'benang', 'jarum',
 ];
 
 /** State yang HANYA diketahui dan dikelola secara otoritatif oleh Host */
@@ -158,6 +209,12 @@ const hostState = {
   freezeUntil:        0,         // timestamp berakhirnya efek beku
   freezeInitiator:    null,      // ID pemain yang membekukan tebakan lawan
   scores:             {},        // [AUTHORITATIVE - HOST]: { [playerId]: number }
+  // Sistem Ronde
+  totalRounds:        2,         // jumlah ronde yang dipilih host di waiting room
+  currentRound:       1,         // ronde saat ini (ronde selesai saat semua pemain sudah jadi drawer)
+  turnsInRound:       0,         // berapa drawer yang sudah main di ronde ini
+  // Pool kata teracak (Fisher-Yates shuffle) agar kata benar-benar acak tanpa pola
+  wordPool:           [],        // kata-kata yang belum muncul di pool saat ini
 };
 
 /* State skor lokal dan leaderboard yang tersinkronisasi dari Host (Fase 5a) */
@@ -203,6 +260,8 @@ const btnStartGame            = /** @type {HTMLButtonElement} */ (document.getEl
 const nonHostWaitingNotice    = /** @type {HTMLElement}       */ (document.getElementById('nonHostWaitingNotice'));
 const waitingError            = /** @type {HTMLElement}       */ (document.getElementById('waitingError'));
 const btnLeaveWaiting         = /** @type {HTMLButtonElement} */ (document.getElementById('btnLeaveWaiting'));
+const roundCountSelect        = /** @type {HTMLSelectElement|null} */ (document.getElementById('roundCountSelect'));
+const roundBadge              = /** @type {HTMLElement|null} */ (document.getElementById('roundBadge'));
 
 /* Canvas & Toolbar */
 const canvas           = /** @type {HTMLCanvasElement}  */ (document.getElementById('drawCanvas'));
@@ -576,6 +635,10 @@ async function showLobby() {
   hostState.freezeUntil      = 0;
   hostState.freezeInitiator  = null;
   hostState.scores           = {};
+  hostState.currentRound     = 1;
+  hostState.totalRounds      = 2;
+  hostState.turnsInRound     = 0;
+  hostState.wordPool         = [];
 
   powerupState.usedRevealThisTurn = false;
   powerupState.usedFreezeThisTurn = false;
@@ -612,13 +675,46 @@ async function showLobby() {
  * 6. Jika waktu habis, Host menyiarkan kata asli dan ganti giliran.
  * ============================================================ */
 
+/**
+ * fisherYatesShuffle - In-place Fisher-Yates shuffle untuk randomisasi array benar-benar acak.
+ * Memastikan kata tidak mengikuti pola yang sama terus menerus.
+ *
+ * @template T
+ * @param {T[]} arr
+ * @returns {T[]}
+ */
+function fisherYatesShuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * pickWord - [HOST AUTHORITATIVE]
+ * Ambil kata berikutnya dari pool teracak (Fisher-Yates).
+ * Saat pool habis, isi ulang dengan shuffle baru agar tidak ada pola berulang.
+ * Kata yang baru saja dipakai tidak akan muncul lagi sebagai kata pertama pool baru.
+ */
 function pickWord() {
-  if (WORD_LIST.length === 1) return WORD_LIST[0];
-  let candidate;
-  do {
-    candidate = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
-  } while (candidate === hostState.secretWord);
-  return candidate;
+  if (!hostState.wordPool || hostState.wordPool.length === 0) {
+    const newPool = [...WORD_LIST].filter((w) => w !== hostState.secretWord);
+    hostState.wordPool = fisherYatesShuffle(newPool);
+  }
+  return hostState.wordPool.pop();
+}
+
+/**
+ * updateRoundBadge - Perbarui badge ronde di HUD game untuk semua client.
+ *
+ * @param {number} currentRound
+ * @param {number} totalRounds
+ */
+function updateRoundBadge(currentRound, totalRounds) {
+  if (roundBadge) {
+    roundBadge.textContent = `🔁 Ronde ${currentRound}/${totalRounds}`;
+  }
 }
 
 /**
@@ -662,13 +758,14 @@ function hostStartTurnForDrawer(drawerId) {
 
   /* Siarkan event 'turn-change' ke seluruh client di room */
   sendTurnChange({
-    drawerId:   currentDrawerId,
-    drawerWord: word, // plaintext hanya ditampilkan untuk client dengan getSelfKey() === drawerId
-    hint:       hint,
-    duration:   hostState.turnDuration,
-    startedAt:  Date.now(),
+    drawerId:     currentDrawerId,
+    drawerWord:   word, // plaintext hanya ditampilkan untuk client dengan getSelfKey() === drawerId
+    hint:         hint,
+    duration:     hostState.turnDuration,
+    startedAt:    Date.now(),
+    currentRound: hostState.currentRound,
+    totalRounds:  hostState.totalRounds,
   });
-
   /* Host menjalankan countdown timer 60 detik secara authoritative */
   hostState.timerInterval = setInterval(() => {
     hostState.secondsRemaining -= 1;
@@ -683,6 +780,8 @@ function hostStartTurnForDrawer(drawerId) {
 /**
  * hostStartNextTurn - [HOST AUTHORITATIVE]
  * Mulai giliran baru round-robin, tentukan drawer, dan siarkan 'turn-change'.
+ * Melacak ronde: setelah semua pemain menjadi drawer 1 kali = 1 ronde selesai.
+ * Setelah totalRounds ronde selesai, game berakhir otomatis.
  */
 function hostStartNextTurn() {
   if (!state.isHost) return;
@@ -702,9 +801,43 @@ function hostStartNextTurn() {
     hostState.playerOrder = [getSelfKey()];
   }
 
-  /* Giliran round-robin */
-  hostState.currentDrawerIndex = (hostState.currentDrawerIndex + 1) % hostState.playerOrder.length;
-  const nextDrawerId           = hostState.playerOrder[hostState.currentDrawerIndex];
+  /* Hitung drawer berikutnya dengan round-robin */
+  const prevIndex = hostState.currentDrawerIndex;
+  hostState.currentDrawerIndex = (prevIndex + 1) % hostState.playerOrder.length;
+  const nextDrawerId = hostState.playerOrder[hostState.currentDrawerIndex];
+
+  /* Lacak jumlah giliran di ronde ini */
+  hostState.turnsInRound += 1;
+
+  /* Jika sudah semua pemain mendapat giliran, ronde selesai */
+  if (hostState.turnsInRound >= hostState.playerOrder.length) {
+    hostState.turnsInRound = 0;
+
+    /* Jika sudah mencapai total ronde yang ditentukan, game over */
+    if (hostState.currentRound >= hostState.totalRounds) {
+      /* Game berakhir — semua ronde selesai */
+      const finalBoard = buildLeaderboardList(hostState.scores);
+      sendGameOver({
+        reason:      'all-rounds-done',
+        message:     `🏆 Semua ${hostState.totalRounds} ronde telah selesai! Permainan berakhir.`,
+        leaderboard: finalBoard,
+        finalScores: hostState.scores,
+      }).catch(console.error);
+      return;
+    }
+
+    /* Ronde berikutnya dimulai */
+    hostState.currentRound += 1;
+
+    /* Beritahu semua client ronde baru via chat */
+    sendGuessResult({
+      isCorrect: false,
+      guesserId: 'system',
+      guess:     '(Ronde Baru)',
+      word:      null,
+      roundInfo: { currentRound: hostState.currentRound, totalRounds: hostState.totalRounds },
+    }).catch(console.error);
+  }
 
   hostStartTurnForDrawer(nextDrawerId);
 }
@@ -932,13 +1065,18 @@ function renderGuesserWordSlots(hint) {
 }
 
 /* Event listener 'turn-change' dari Host */
-onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
+onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt, currentRound, totalRounds }) => {
   clearCanvas();
   startLocalTimer(duration, startedAt);
 
   state.currentDrawerId = drawerId;
   const isMeDrawer      = (drawerId === getSelfKey());
   state.isDrawer        = isMeDrawer;
+
+  /* Update badge ronde jika info tersedia */
+  if (currentRound && totalRounds) {
+    updateRoundBadge(currentRound, totalRounds);
+  }
 
   /* Reset status power-up lokal pada giliran baru */
   powerupState.usedRevealThisTurn = false;
@@ -1008,7 +1146,7 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt }) => {
  * [CLIENT - RENDER ONLY] Update UI Berdasarkan 'guess-result' & Skor (Fase 3b & 5a)
  * ============================================================ */
 
-onGuessResult(({ isCorrect, guesserId, guess, word, pointsAwarded, drawerPoints, drawerId, secondsRemaining }) => {
+onGuessResult(({ isCorrect, guesserId, guess, word, pointsAwarded, drawerPoints, drawerId, secondsRemaining, roundInfo }) => {
   const isMyGuess   = (guesserId === getSelfKey());
   const guesserName = isMyGuess ? 'Kamu' : `Peer ${guesserId.slice(0, 4)}`;
 
@@ -1069,6 +1207,17 @@ onGuessResult(({ isCorrect, guesserId, guess, word, pointsAwarded, drawerPoints,
 
     appendChatMessage({
       text: `⏰ [WAKTU HABIS] Tidak ada yang menebak tepat. Kata yang benar adalah: "${word}".`,
+      from: 'system',
+      ts:   Date.now(),
+      self: false,
+    });
+  } else if (guesserId === 'system' && guess === '(Ronde Baru)') {
+    /* Sistem mengumumkan ronde baru */
+    if (roundInfo && roundInfo.currentRound && roundInfo.totalRounds) {
+      updateRoundBadge(roundInfo.currentRound, roundInfo.totalRounds);
+    }
+    appendChatMessage({
+      text: `🔁 [RONDE BARU] Ronde ${roundInfo?.currentRound || '?'} dari ${roundInfo?.totalRounds || '?'} dimulai!`,
       from: 'system',
       ts:   Date.now(),
       self: false,
@@ -1381,13 +1530,17 @@ onGameOver(({ reason, message, leaderboard }) => {
  * [TRANSITION] Game Start Listener (Waiting Room -> Game)
  * ============================================================ */
 
-onGameStart(({ roomCode, players, firstDrawerId, startedAt }) => {
+onGameStart(({ roomCode, players, firstDrawerId, startedAt, totalRounds }) => {
   roomCodeDisplay.textContent = roomCode;
   showGame();
 
   state.currentDrawerId = firstDrawerId;
   const isMeDrawer      = (firstDrawerId === getSelfKey());
   state.isDrawer        = isMeDrawer;
+
+  /* Update badge ronde awal */
+  const rounds = Number(totalRounds) || 2;
+  updateRoundBadge(1, rounds);
 
   if (state.isHost) {
     /* Inisialisasi skor awal seluruh pemain menjadi 0 pada Host */
@@ -1398,6 +1551,12 @@ onGameStart(({ roomCode, players, firstDrawerId, startedAt }) => {
         if (pid) hostState.scores[pid] = 0;
       });
     }
+
+    /* Inisialisasi state ronde */
+    hostState.totalRounds      = rounds;
+    hostState.currentRound     = 1;
+    hostState.turnsInRound     = 0; // giliran pertama (firstDrawer) dihitung di awal
+    hostState.wordPool         = [];
 
     /* Siapkan urutan pemain untuk round-robin berikutnya */
     let playerIds = [];
@@ -1610,6 +1769,9 @@ btnStartGame.addEventListener('click', async () => {
   btnStartGame.textContent = '🚀 Memulai Permainan…';
   waitingError.textContent = '';
 
+  /* Ambil jumlah ronde yang dipilih host */
+  const selectedRounds = roundCountSelect ? Number(roundCountSelect.value) || 2 : 2;
+
   const code    = currentRoom() || waitingRoomCode.textContent.trim();
   const selfKey = getSelfKey();
 
@@ -1645,6 +1807,7 @@ btnStartGame.addEventListener('click', async () => {
       players:       finalPlayers,
       firstDrawerId,
       startedAt:     Date.now(),
+      totalRounds:   selectedRounds,
     });
   } catch (err) {
     console.error('[sendGameStart error]', err);

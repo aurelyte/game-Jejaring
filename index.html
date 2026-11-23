@@ -146,6 +146,24 @@
           <div class="waiting-actions">
             <!-- Kontrol khusus Host -->
             <div id="hostWaitingControls" class="host-waiting-controls">
+
+              <!-- Pemilihan Jumlah Ronde -->
+              <div class="round-picker">
+                <label for="roundCountSelect" class="round-picker-label">
+                  🔁 Jumlah Ronde
+                </label>
+                <div class="round-picker-row">
+                  <select id="roundCountSelect" class="round-select" aria-label="Pilih jumlah ronde">
+                    <option value="1">1 Ronde</option>
+                    <option value="2" selected>2 Ronde</option>
+                    <option value="3">3 Ronde</option>
+                    <option value="4">4 Ronde</option>
+                    <option value="5">5 Ronde</option>
+                  </select>
+                  <span class="round-picker-hint">per pemain menjadi penggambar</span>
+                </div>
+              </div>
+
               <button id="btnStartGame" class="btn-primary btn-lg btn-start-game btn-tactile">
                 🚀 Mulai Permainan
               </button>
@@ -193,6 +211,10 @@
             <!-- Timer giliran (Fase 3c) -->
             <span id="timerBadge" class="timer-badge" title="Sisa waktu giliran">
               ⏱️ 60s
+            </span>
+            <!-- Ronde indicator -->
+            <span id="roundBadge" class="round-badge" title="Ronde saat ini">
+              🔁 Ronde 1
             </span>
           </div>
 

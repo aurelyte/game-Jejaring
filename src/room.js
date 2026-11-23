@@ -355,6 +355,7 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
         players:       payload.players,
         firstDrawerId: payload.firstDrawerId,
         startedAt:     payload.startedAt,
+        totalRounds:   payload.totalRounds,
         from:          payload.from,
         ts:            payload.ts,
         self:          false,
@@ -460,14 +461,16 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
       if (!payload) return;
       if (payload.from === getSelfKey()) return; // Sender sudah memprosesnya secara lokal
       _emitTurnChange({
-        drawerId:   payload.drawerId,
-        drawerWord: payload.drawerWord,
-        hint:       payload.hint,
-        duration:   payload.duration,
-        startedAt:  payload.startedAt,
-        from:       payload.from,
-        ts:         payload.ts,
-        self:       false,
+        drawerId:     payload.drawerId,
+        drawerWord:   payload.drawerWord,
+        hint:         payload.hint,
+        duration:     payload.duration,
+        startedAt:    payload.startedAt,
+        currentRound: payload.currentRound,
+        totalRounds:  payload.totalRounds,
+        from:         payload.from,
+        ts:           payload.ts,
+        self:         false,
       });
     });
 
