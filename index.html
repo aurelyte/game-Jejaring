@@ -6,11 +6,11 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Tebak Gambar — Multiplayer Sketch & Guess</title>
 
-    <!-- Google Fonts: Outfit (Display & Numbers) + Plus Jakarta Sans (UI & Text) + JetBrains Mono (Codes) -->
+    <!-- One practical UI typeface keeps game information compact and readable. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
 
@@ -26,7 +26,7 @@
         </div>
         <h1 class="studio-title">
           <span class="title-accent">Tebak</span> Gambar
-          <span class="title-emoji" aria-hidden="true">✏️</span>
+          <i data-lucide="pencil" class="ui-icon title-icon" aria-hidden="true"></i>
         </h1>
         <p class="studio-subtitle">Gambar imajinasimu, adu cepat tebak kata rahasia bersama teman</p>
       </header>
@@ -44,7 +44,7 @@
               <span class="name-hint">Maks. 16 karakter</span>
             </div>
             <div class="name-input-wrapper">
-              <span class="name-input-avatar" aria-hidden="true">👤</span>
+              <i data-lucide="user-round" class="name-input-avatar ui-icon" aria-hidden="true"></i>
               <input
                 type="text"
                 id="playerNameInput"
@@ -61,11 +61,11 @@
           <div class="lobby-blocks-grid">
             <!-- Buat room baru -->
             <div class="lobby-block lobby-block--create">
-              <div class="block-icon-bubble" aria-hidden="true">⚡</div>
+              <i data-lucide="plus" class="block-icon-bubble ui-icon" aria-hidden="true"></i>
               <h2 class="lobby-heading">Buat Room Baru</h2>
               <p class="lobby-desc">Buka studio baru, jadilah host, dan undang temanmu dengan kode unik.</p>
               <button id="btnCreateRoom" class="btn-primary btn-lg btn-tactile">
-                <span class="btn-icon">✦</span> Buat Room Baru
+                <i data-lucide="plus" class="btn-icon ui-icon" aria-hidden="true"></i> Buat Room Baru
               </button>
             </div>
 
@@ -75,7 +75,7 @@
 
             <!-- Join room -->
             <div class="lobby-block lobby-block--join">
-              <div class="block-icon-bubble" aria-hidden="true">🎯</div>
+              <i data-lucide="log-in" class="block-icon-bubble ui-icon" aria-hidden="true"></i>
               <h2 class="lobby-heading">Gabung Room</h2>
               <p class="lobby-desc">Sudah punya kode 6 karakter dari teman? Ketik di bawah untuk masuk.</p>
               <form id="joinForm" class="join-form" autocomplete="off" novalidate>
@@ -91,7 +91,7 @@
                   />
                 </div>
                 <button type="submit" id="btnJoinRoom" class="btn-primary btn-tactile">
-                  Masuk Room
+                  <i data-lucide="log-in" class="ui-icon" aria-hidden="true"></i> Masuk Room
                 </button>
               </form>
             </div>
@@ -115,7 +115,7 @@
               <div class="waiting-code-row">
                 <span id="waitingRoomCode" class="waiting-room-code">—</span>
                 <button id="btnCopyCode" class="btn-copy" title="Salin kode room" aria-label="Salin kode room">
-                  📋 Salin
+                  <i data-lucide="copy" class="ui-icon" aria-hidden="true"></i> Salin
                 </button>
               </div>
             </div>
@@ -123,7 +123,7 @@
               <span class="status-badge status-badge--waiting">
                 <span class="pulse-dot"></span> Menunggu Pemain
               </span>
-              <span id="waitingPlayerCountBadge" class="player-count-badge">👥 1/8 Pemain</span>
+              <span id="waitingPlayerCountBadge" class="player-count-badge">1/8 Pemain</span>
             </div>
           </div>
 
@@ -150,7 +150,7 @@
               <!-- Pemilihan Jumlah Ronde -->
               <div class="round-picker">
                 <label for="roundCountSelect" class="round-picker-label">
-                  🔁 Jumlah Ronde
+                  Jumlah Ronde
                 </label>
                 <div class="round-picker-row">
                   <select id="roundCountSelect" class="round-select" aria-label="Pilih jumlah ronde">
@@ -165,10 +165,10 @@
               </div>
 
               <button id="btnStartGame" class="btn-primary btn-lg btn-start-game btn-tactile">
-                🚀 Mulai Permainan
+                <i data-lucide="play" class="ui-icon" aria-hidden="true"></i> Mulai Permainan
               </button>
               <p class="host-random-hint">
-                🎲 Penggambar pertama akan diacak otomatis oleh sistem dari semua pemain yang online.
+                Penggambar pertama dipilih secara acak dari semua pemain yang online.
               </p>
             </div>
 
@@ -181,7 +181,7 @@
             <p id="waitingError" class="waiting-error" aria-live="assertive"></p>
 
             <button id="btnLeaveWaiting" class="btn-leave-waiting" title="Keluar dari ruang tunggu">
-              ← Kembali ke Lobby
+              <i data-lucide="arrow-left" class="ui-icon" aria-hidden="true"></i> Kembali ke Lobby
             </button>
           </div>
         </div>
@@ -200,42 +200,42 @@
               <strong id="roomCodeDisplay">—</strong>
             </span>
             <span class="room-members" id="roomMembers" title="Jumlah pemain di room">
-              👥 —
+              — pemain
             </span>
             <span class="conn-badge" id="connBadge" data-status="disconnected">
-              ⬤ Menghubungkan…
+              Menghubungkan…
             </span>
           </div>
 
           <div class="room-bar-center">
             <!-- Timer giliran (Fase 3c) -->
             <span id="timerBadge" class="timer-badge" title="Sisa waktu giliran">
-              ⏱️ 60s
+              60s
             </span>
             <!-- Ronde indicator -->
             <span id="roundBadge" class="round-badge" title="Ronde saat ini">
-              🔁 Ronde 1
+              Ronde 1
             </span>
           </div>
 
           <div class="room-bar-right">
             <!-- Role badge: Host vs Guesser -->
             <span id="roleBadge" class="role-badge role-badge--host">
-              👑 Host
+              Host
             </span>
             <!-- Skor pemain saat ini (Fase 5a) -->
             <span id="myScoreBadge" class="my-score-badge" title="Skor total Anda">
-              🏆 0 pts
+              0 pts
             </span>
             <button id="btnLeaveRoom" class="btn-leave" title="Keluar dari room">
-              Keluar ✕
+              <i data-lucide="log-out" class="ui-icon" aria-hidden="true"></i> Keluar
             </button>
           </div>
         </div>
 
         <!-- Banner penanda siapa yang sedang gambar -->
         <div id="drawingIndicator" class="drawing-indicator" aria-live="polite">
-          🎨 Mode Aktif: Anda bisa menggambar di canvas
+          Giliran Anda menggambar di canvas
         </div>
 
         <!-- Canvas gambar & studio tablet -->
@@ -254,7 +254,7 @@
               <button class="swatch"        data-color="#ffffff" style="background:#ffffff; border-color: #cbd5e1" title="Putih Penghapus" aria-label="Putih Penghapus"></button>
               <!-- Color picker bebas -->
               <label class="swatch swatch--picker" title="Pilih warna kustom" aria-label="Pilih warna kustom">
-                🎨
+                <i data-lucide="palette" class="ui-icon" aria-hidden="true"></i>
                 <input type="color" id="colorPicker" value="#1e293b" />
               </label>
             </div>
@@ -272,7 +272,7 @@
 
             <div class="tool-group tool-group--actions">
               <button id="clearBtn" class="btn-clear" title="Bersihkan canvas" aria-label="Hapus canvas">
-                🗑 Hapus
+                <i data-lucide="trash-2" class="ui-icon" aria-hidden="true"></i> Hapus
               </button>
             </div>
           </div>
@@ -298,26 +298,26 @@
 
           <!-- Info khusus Host (penggambar) -->
           <p id="hostGuessNotice" class="host-notice hidden">
-            🎨 Anda sedang menggambar kata rahasia di canvas. Biarkan pemain lain menebaknya!
+            Anda sedang menggambar kata rahasia. Biarkan pemain lain menebaknya.
           </p>
 
           <!-- Power-up Bar (Fase 4b & 4c) -->
           <div class="powerup-bar" id="powerupBar" aria-label="Power-up">
-            <span class="powerup-title">⚡ Power-up:</span>
+            <span class="powerup-title"><i data-lucide="zap" class="ui-icon" aria-hidden="true"></i> Power-up</span>
             <button id="btnPowerupReveal" class="btn-powerup btn-powerup--reveal" title="Buka 1 huruf acak bantuan (1x per ronde)">
-              💡 Intip Huruf <span class="powerup-badge">1x</span>
+              <i data-lucide="lightbulb" class="ui-icon" aria-hidden="true"></i> Intip Huruf <span class="powerup-badge">1x</span>
             </button>
             <button id="btnPowerupFreeze" class="btn-powerup btn-powerup--freeze" title="Kunci tebakan lawan selama 5 detik (1x per ronde)">
-              🧊 Bekukan Lawan <span class="powerup-badge">5s</span>
+              <i data-lucide="snowflake" class="ui-icon" aria-hidden="true"></i> Bekukan Lawan <span class="powerup-badge">5s</span>
             </button>
             <button id="btnPowerupTime" class="btn-powerup btn-powerup--time hidden" title="Tambah waktu menggambar +15 detik (1x per giliran)">
-              ⏰ Tambah Waktu <span class="powerup-badge">+15s</span>
+              <i data-lucide="timer" class="ui-icon" aria-hidden="true"></i> Tambah Waktu <span class="powerup-badge">+15s</span>
             </button>
           </div>
 
           <!-- Freeze indicator banner saat terkena efek beku (Fase 4c) -->
           <div id="freezeOverlay" class="freeze-overlay hidden" aria-live="assertive">
-            <span class="freeze-icon">🧊</span>
+            <i data-lucide="snowflake" class="freeze-icon ui-icon" aria-hidden="true"></i>
             <span id="freezeNoticeText">Tebakan Anda sedang dibekukan oleh lawan!</span>
             <span id="freezeTimerBadge" class="freeze-timer">5s</span>
           </div>
@@ -357,10 +357,10 @@
           <section class="leaderboard-section" id="leaderboardSection" aria-label="Papan Skor">
             <div class="leaderboard-header">
               <div class="leaderboard-heading-group">
-                <span class="leaderboard-header-icon" aria-hidden="true">🏆</span>
+                <i data-lucide="trophy" class="leaderboard-header-icon ui-icon" aria-hidden="true"></i>
                 <h2 class="leaderboard-heading">Papan Skor</h2>
               </div>
-              <span class="leaderboard-total-badge" id="leaderboardTotalPlayers">👥 — Pemain</span>
+              <span class="leaderboard-total-badge" id="leaderboardTotalPlayers">— Pemain</span>
             </div>
 
             <!-- List Pemain & Peringkat -->
@@ -373,7 +373,7 @@
           <section class="chat-section" aria-label="Chat room">
             <div class="chat-header">
               <div class="chat-heading-group">
-                <span class="chat-header-icon" aria-hidden="true">💬</span>
+                <i data-lucide="message-circle" class="chat-header-icon ui-icon" aria-hidden="true"></i>
                 <h2 class="chat-heading">Obrolan Studio</h2>
               </div>
               <span class="chat-header-hint">Tebakan & Pesan</span>
@@ -406,7 +406,7 @@
       <div id="gameOverModal" class="game-over-modal hidden" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
         <div class="game-over-card">
           <div class="game-over-header">
-            <span class="game-over-icon" aria-hidden="true">🏆</span>
+            <i data-lucide="trophy" class="game-over-icon ui-icon" aria-hidden="true"></i>
             <h2 id="gameOverTitle" class="game-over-title">Permainan Selesai</h2>
             <p id="gameOverNotice" class="game-over-notice">Host telah meninggalkan room. Permainan telah berakhir.</p>
           </div>
@@ -420,7 +420,7 @@
 
           <div class="game-over-actions">
             <button id="btnGameOverLeave" class="btn-primary btn-lg btn-tactile">
-              ← Kembali ke Lobby
+              <i data-lucide="arrow-left" class="ui-icon" aria-hidden="true"></i> Kembali ke Lobby
             </button>
           </div>
         </div>

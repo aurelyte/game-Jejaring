@@ -7,22 +7,22 @@
  * 1. Design Tokens & CSS Variables
  * ============================================================ */
 :root {
-  /* Palette: Midnight Studio Base */
-  --bg-deep: #090d16;
-  --bg-surface: #111726;
-  --bg-surface-elevated: #182033;
-  --bg-surface-high: #212c44;
-  --bg-input: #0e1422;
+  /* Palette: quiet graphite drawing table */
+  --bg-deep: #222624;
+  --bg-surface: #2b302d;
+  --bg-surface-elevated: #343a36;
+  --bg-surface-high: #404842;
+  --bg-input: #252a27;
 
   /* Borders & Dividers */
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-medium: rgba(255, 255, 255, 0.12);
-  --border-focus: #6366f1;
+  --border-subtle: rgba(214, 218, 212, 0.12);
+  --border-medium: rgba(214, 218, 212, 0.22);
+  --border-focus: #91a79a;
 
   /* Accents */
-  --accent-primary: #6366f1;
-  --accent-primary-hover: #4f46e5;
-  --accent-primary-shadow: #3730a3;
+  --accent-primary: #91a79a;
+  --accent-primary-hover: #a5b9ad;
+  --accent-primary-shadow: #687d70;
 
   --accent-amber: #f59e0b;
   --accent-amber-glow: rgba(245, 158, 11, 0.25);
@@ -37,14 +37,14 @@
   --accent-sky-glow: rgba(14, 165, 233, 0.25);
 
   /* Typography */
-  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-mono: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
 
   /* Text Colors */
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
+  --text-main: #d6dad4;
+  --text-muted: #9aa49d;
+  --text-dim: #77827a;
 
   /* Shadows & Radius */
   --radius-sm: 8px;
@@ -76,11 +76,7 @@ html {
 body {
   font-family: var(--font-body);
   background-color: var(--bg-deep);
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.15), transparent 70%),
-    radial-gradient(circle at 10% 30%, rgba(14, 165, 233, 0.08), transparent 45%),
-    radial-gradient(circle at 90% 70%, rgba(245, 158, 11, 0.06), transparent 50%);
-  background-attachment: fixed;
+  background-image: none;
   color: var(--text-main);
   min-height: 100vh;
   display: flex;
@@ -164,16 +160,15 @@ body {
 }
 
 .title-accent {
-  background: linear-gradient(135deg, #a5b4fc 0%, #6366f1 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-main);
 }
 
-.title-emoji {
-  display: inline-block;
-  transform: rotate(-10deg);
-  margin-left: 0.25rem;
-  filter: drop-shadow(0 2px 8px rgba(99, 102, 241, 0.4));
+.title-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-left: 0.35rem;
+  vertical-align: -0.15em;
+  color: var(--accent-primary);
 }
 
 .studio-subtitle {
@@ -192,24 +187,15 @@ body {
 }
 
 .lobby-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   padding: 2.25rem 2rem;
-  box-shadow: var(--shadow-card);
-  backdrop-filter: blur(16px);
-  position: relative;
-  overflow: hidden;
+  box-shadow: none;
 }
 
 .lobby-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, var(--accent-primary), var(--accent-sky), transparent);
+  display: none;
 }
 
 /* Input Nama Pemain */
@@ -293,10 +279,10 @@ body {
 }
 
 .lobby-block {
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 1.75rem 1.5rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 1.25rem 1rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -304,8 +290,8 @@ body {
 }
 
 .lobby-block:hover {
-  border-color: var(--border-medium);
-  box-shadow: var(--shadow-elevated);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .block-icon-bubble {
@@ -351,8 +337,8 @@ body {
 }
 
 .lobby-divider span {
-  background: var(--bg-surface-high);
-  border: 1px solid var(--border-subtle);
+  background: var(--bg-deep);
+  border: 0;
   color: var(--text-dim);
   font-size: 0.75rem;
   font-weight: 700;
@@ -443,7 +429,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+  background: var(--accent-primary);
   color: #ffffff;
   font-family: var(--font-body);
   font-size: 0.95rem;
@@ -659,7 +645,7 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #38bdf8);
+  background: var(--accent-primary);
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -1547,7 +1533,7 @@ body {
 }
 
 .btn-submit {
-  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+  background: var(--accent-primary);
   color: #ffffff;
   font-family: var(--font-body);
   font-size: 0.95rem;
@@ -1724,7 +1710,7 @@ body {
 }
 
 .leaderboard-item.rank-1 {
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, var(--bg-surface-elevated) 100%);
+  background: var(--bg-surface-elevated);
   border-color: rgba(245, 158, 11, 0.35);
 }
 .leaderboard-item.rank-1 .leaderboard-rank {
@@ -1733,7 +1719,7 @@ body {
 }
 
 .leaderboard-item.rank-2 {
-  background: linear-gradient(90deg, rgba(203, 213, 225, 0.08) 0%, var(--bg-surface-elevated) 100%);
+  background: var(--bg-surface-elevated);
   border-color: rgba(203, 213, 225, 0.25);
 }
 .leaderboard-item.rank-2 .leaderboard-rank {
@@ -1741,7 +1727,7 @@ body {
 }
 
 .leaderboard-item.rank-3 {
-  background: linear-gradient(90deg, rgba(217, 119, 6, 0.08) 0%, var(--bg-surface-elevated) 100%);
+  background: var(--bg-surface-elevated);
   border-color: rgba(217, 119, 6, 0.25);
 }
 .leaderboard-item.rank-3 .leaderboard-rank {
@@ -1752,7 +1738,7 @@ body {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #38bdf8);
+  background: var(--accent-primary);
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -1764,7 +1750,7 @@ body {
 }
 
 .leaderboard-item.rank-1 .leaderboard-avatar {
-  background: linear-gradient(135deg, #f59e0b, #fbbf24);
+  background: var(--accent-amber);
   color: #451a03;
 }
 
@@ -2097,7 +2083,7 @@ body {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, transparent, var(--accent-amber), var(--accent-primary), transparent);
+  background: var(--accent-primary);
 }
 
 .game-over-header {
@@ -2180,4 +2166,322 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ============================================================
+ * 14. Active-game desktop board
+ * The game board intentionally uses the viewport as a bounded work area.
+ * Chat owns its own scroll region, never the document.
+ * ============================================================ */
+body:has(#gameScreen:not(.hidden)) {
+  padding: 8px;
+  overflow: hidden;
+}
+
+#app:has(#gameScreen:not(.hidden)) {
+  max-width: 1280px;
+  height: calc(100dvh - 16px);
+}
+
+body:has(#gameScreen:not(.hidden)) .studio-header {
+  display: none;
+}
+
+.game-screen:not(.hidden) {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 0.43fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "hud hud"
+    "status side"
+    "board side"
+    "controls side";
+  gap: 8px 12px;
+}
+
+.game-screen:not(.hidden) .room-bar {
+  grid-area: hud;
+  margin: 0;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+
+.game-screen:not(.hidden) .drawing-indicator {
+  grid-area: status;
+  align-self: stretch;
+  position: static;
+  z-index: auto;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: rgba(43, 48, 45, 0.94);
+  border-color: rgba(145, 167, 154, 0.45);
+  color: var(--text-main);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.game-screen:not(.hidden) .canvas-wrapper {
+  grid-area: board;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  align-self: start;
+  border-radius: 10px;
+  border-color: var(--border-medium);
+  box-shadow: none;
+}
+
+.game-screen:not(.hidden) .toolbar {
+  min-height: 42px;
+  padding: 6px 10px;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.game-screen:not(.hidden) .swatch {
+  width: 22px;
+  height: 22px;
+}
+
+.game-screen:not(.hidden) .size-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.game-screen:not(.hidden) .canvas-stage {
+  flex: 0 0 auto;
+  min-height: auto;
+  display: block;
+  background: #f4f3ee;
+}
+
+.game-screen:not(.hidden) #drawCanvas {
+  /* The canvas height remains owned by the existing resize routine. */
+}
+
+.game-screen:not(.hidden) .guess-section {
+  grid-area: controls;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.game-screen:not(.hidden) .word-display {
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 0 0 7px;
+}
+
+.game-screen:not(.hidden) .word-label,
+.game-screen:not(.hidden) .powerup-title {
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.game-screen:not(.hidden) .word-slots {
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 26px;
+}
+
+.game-screen:not(.hidden) .letter-slot,
+.game-screen:not(.hidden) .letter-slot.space-gap {
+  width: 24px;
+  height: 28px;
+  border-width: 1px;
+  border-radius: 5px;
+  font-size: 0.88rem;
+  box-shadow: none;
+}
+
+.game-screen:not(.hidden) .letter-slot.space-gap { width: 8px; }
+.game-screen:not(.hidden) .word-hint { font-size: 0.72rem; }
+
+.game-screen:not(.hidden) .host-notice {
+  padding: 5px 8px;
+  margin: 0 0 7px;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.game-screen:not(.hidden) .powerup-bar {
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 5px 0 7px;
+  margin: 0;
+  background: transparent;
+  border: 0;
+}
+
+.game-screen:not(.hidden) .btn-powerup {
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: var(--text-main);
+  border-color: var(--border-medium);
+}
+
+.game-screen:not(.hidden) .btn-powerup--reveal,
+.game-screen:not(.hidden) .btn-powerup--freeze,
+.game-screen:not(.hidden) .btn-powerup--time {
+  background: var(--bg-surface-elevated);
+}
+
+.game-screen:not(.hidden) .freeze-overlay {
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  font-size: 0.75rem;
+  box-shadow: none;
+  animation: none;
+}
+
+.game-screen:not(.hidden) .guess-form { margin: 0; }
+.game-screen:not(.hidden) .guess-input-container { gap: 6px; }
+.game-screen:not(.hidden) .guess-input,
+.game-screen:not(.hidden) .btn-submit {
+  min-height: 34px;
+  padding: 6px 9px;
+  font-size: 0.8rem;
+  box-shadow: none;
+}
+.game-screen:not(.hidden) .btn-submit { background: var(--accent-primary); color: #222624; }
+.game-screen:not(.hidden) .feedback { min-height: 0; margin: 4px 0 0; font-size: 0.75rem; }
+.game-screen:not(.hidden) .score-line { display: none; }
+
+.game-screen:not(.hidden) .game-bottom-grid {
+  grid-area: side;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.game-screen:not(.hidden) .chat-section,
+.game-screen:not(.hidden) .leaderboard-section {
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.game-screen:not(.hidden) .chat-section { grid-row: 1; }
+.game-screen:not(.hidden) .leaderboard-section { grid-row: 2; max-height: 142px; }
+
+.game-screen:not(.hidden) .chat-header,
+.game-screen:not(.hidden) .leaderboard-header {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+}
+
+.game-screen:not(.hidden) .chat-heading,
+.game-screen:not(.hidden) .leaderboard-heading { font-size: 0.86rem; }
+.game-screen:not(.hidden) .chat-header-icon,
+.game-screen:not(.hidden) .leaderboard-header-icon { font-size: 0.9rem; }
+.game-screen:not(.hidden) .chat-header-hint { font-size: 0.68rem; }
+
+.game-screen:not(.hidden) .chat-list {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  margin-bottom: 8px;
+  gap: 5px;
+}
+
+.game-screen:not(.hidden) .chat-bubble { padding: 5px 7px; font-size: 0.76rem; }
+.game-screen:not(.hidden) .chat-meta { font-size: 0.62rem; }
+.game-screen:not(.hidden) .chat-input,
+.game-screen:not(.hidden) .btn-chat-send { min-height: 32px; padding: 5px 7px; font-size: 0.76rem; }
+
+.game-screen:not(.hidden) .leaderboard-list { max-height: 82px; gap: 3px; }
+.game-screen:not(.hidden) .leaderboard-item { padding: 4px 6px; gap: 6px; }
+.game-screen:not(.hidden) .leaderboard-avatar { width: 22px; height: 22px; font-size: 0.7rem; }
+.game-screen:not(.hidden) .leaderboard-rank { width: 20px; font-size: 0.72rem; }
+.game-screen:not(.hidden) .leaderboard-name { font-size: 0.72rem; }
+.game-screen:not(.hidden) .leaderboard-score-val { font-size: 0.8rem; }
+.game-screen:not(.hidden) .leaderboard-score-unit,
+.game-screen:not(.hidden) .leaderboard-total-badge { font-size: 0.62rem; }
+
+.game-screen:not(.hidden) .room-info-label { text-transform: none; }
+.game-screen:not(.hidden) .timer-badge { padding: 4px 8px; font-size: 0.9rem; box-shadow: none; }
+.game-screen:not(.hidden) .round-badge,
+.game-screen:not(.hidden) .role-badge,
+.game-screen:not(.hidden) .my-score-badge,
+.game-screen:not(.hidden) .conn-badge,
+.game-screen:not(.hidden) .room-members { font-size: 0.68rem; padding: 4px 6px; }
+
+/* Lucide is the sole icon treatment; dots and decorative glow are intentionally absent. */
+.ui-icon {
+  width: 1em;
+  height: 1em;
+  stroke-width: 1.8;
+  vertical-align: -0.125em;
+  flex: 0 0 auto;
+}
+
+.studio-badge-dot,
+.pulse-dot { display: none; }
+
+.studio-badge,
+.waiting-card,
+.name-block,
+.waiting-players-section,
+.game-over-card {
+  box-shadow: none;
+}
+
+.waiting-card,
+.game-over-card {
+  background: transparent;
+  border-color: var(--border-subtle);
+}
+
+.game-over-card::before { display: none; }
+
+.studio-badge,
+.name-block,
+.waiting-players-section {
+  background: transparent;
+}
+
+.block-icon-bubble,
+.name-input-avatar,
+.leaderboard-header-icon,
+.chat-header-icon,
+.game-over-icon,
+.freeze-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-primary);
+}
+
+.block-icon-bubble { background: transparent; border: 0; }
+.name-input-avatar { font-size: 1rem; }
+.game-over-icon { font-size: 2rem; }
+
+@media (max-width: 900px), (max-height: 620px) {
+  body:has(#gameScreen:not(.hidden)) { overflow: auto; }
+  #app:has(#gameScreen:not(.hidden)) { height: auto; }
+  .game-screen:not(.hidden) { display: flex; height: auto; }
+  .game-screen:not(.hidden) .drawing-indicator { position: static; margin: 0 0 8px; }
+  .game-screen:not(.hidden) .canvas-wrapper { height: auto; }
+  .game-screen:not(.hidden) .game-bottom-grid { min-height: 420px; }
 }

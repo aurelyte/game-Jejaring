@@ -78,6 +78,53 @@ import {
   dbGetRoomState,
   dbLeaveRoom,
 } from './room.js';
+import {
+  ArrowLeft,
+  Copy,
+  Lightbulb,
+  LogIn,
+  LogOut,
+  MessageCircle,
+  Palette,
+  Pencil,
+  Play,
+  Plus,
+  Snowflake,
+  Timer,
+  Trash2,
+  Trophy,
+  UserRound,
+  Zap,
+  createIcons,
+} from 'lucide';
+
+const UI_ICONS = {
+  ArrowLeft,
+  Copy,
+  Lightbulb,
+  LogIn,
+  LogOut,
+  MessageCircle,
+  Palette,
+  Pencil,
+  Play,
+  Plus,
+  Snowflake,
+  Timer,
+  Trash2,
+  Trophy,
+  UserRound,
+  Zap,
+};
+
+function renderUiIcons(root = document) {
+  createIcons({ icons: UI_ICONS, root, attrs: { 'aria-hidden': 'true' } });
+}
+
+function setButtonLabel(button, icon, label) {
+  button.innerHTML = `<i data-lucide="${icon}" class="ui-icon" aria-hidden="true"></i> ${label}`;
+  renderUiIcons(button);
+}
 
 /* ============================================================
  * State Aplikasi
@@ -302,6 +349,8 @@ const chatForm         = /** @type {HTMLFormElement}   */ (document.getElementBy
 const chatInput        = /** @type {HTMLInputElement}  */ (document.getElementById('chatInput'));
 const chatList         = /** @type {HTMLOListElement}  */ (document.getElementById('chatList'));
 
+renderUiIcons();
+
 /* Leaderboard (Fase 5a) */
 const leaderboardSection      = /** @type {HTMLElement}       */ (document.getElementById('leaderboardSection'));
 const leaderboardList         = /** @type {HTMLOListElement}  */ (document.getElementById('leaderboardList'));
@@ -336,12 +385,12 @@ function showWaitingRoom(code, isHost) {
   if (isHost) {
     hostWaitingControls.classList.remove('hidden');
     nonHostWaitingNotice.classList.add('hidden');
-    roleBadge.textContent = '👑 Host';
+    roleBadge.textContent = 'Host';
     roleBadge.className = 'role-badge role-badge--host';
   } else {
     hostWaitingControls.classList.add('hidden');
     nonHostWaitingNotice.classList.remove('hidden');
-    roleBadge.textContent = '🔍 Pemain';
+    roleBadge.textContent = 'Pemain';
     roleBadge.className = 'role-badge role-badge--guesser';
   }
 }
@@ -353,7 +402,7 @@ function renderWaitingPlayerList(members) {
     ? members
     : [{ id: getSelfKey(), name: getPlayerName(), is_host: state.isHost, online: true }];
 
-  waitingPlayerCountBadge.textContent = `👥 ${list.length}/8 Pemain`;
+  waitingPlayerCountBadge.textContent = `${list.length}/8 Pemain`;
   waitingPlayerList.innerHTML = '';
 
   list.forEach((p) => {
@@ -367,13 +416,15 @@ function renderWaitingPlayerList(members) {
       <div class="waiting-avatar" aria-hidden="true">${escapeHtml(initial)}</div>
       <div class="waiting-player-info">
         <span class="waiting-player-name">${escapeHtml(p.name || 'Pemain')}</span>
-        ${p.is_host ? '<span class="badge-host">👑 HOST</span>' : ''}
+        ${p.is_host ? '<span class="badge-host">Host</span>' : ''}
         ${isSelf ? '<span class="badge-you">(Kamu)</span>' : ''}
       </div>
       <span class="online-dot" title="Online">Online</span>
     `;
     waitingPlayerList.appendChild(li);
   });
+
+  renderUiIcons(waitingPlayerList);
 }
 
 /* ============================================================
@@ -457,13 +508,13 @@ function renderLeaderboard(leaderboardData) {
   leaderboardList.innerHTML = '';
 
   if (leaderboardTotalPlayers) {
-    leaderboardTotalPlayers.textContent = `👥 ${data.length} Pemain`;
+    leaderboardTotalPlayers.textContent = `${data.length} Pemain`;
   }
 
   /* Perbarui badge skor sendiri di room bar */
   const myData = data.find((p) => p.id === getSelfKey());
   if (myScoreBadge) {
-    myScoreBadge.textContent = `🏆 ${myData ? myData.score : 0} pts`;
+    myScoreBadge.textContent = `${myData ? myData.score : 0} pts`;
   }
 
   data.forEach((player) => {
@@ -475,9 +526,7 @@ function renderLeaderboard(leaderboardData) {
     li.dataset.playerId = player.id;
 
     let rankDisplay = `#${player.rank}`;
-    if (player.rank === 1) rankDisplay = '🥇 1';
-    else if (player.rank === 2) rankDisplay = '🥈 2';
-    else if (player.rank === 3) rankDisplay = '🥉 3';
+    if (player.rank <= 3) rankDisplay = `${player.rank}`;
 
     const initial = (player.name || 'P').trim().charAt(0).toUpperCase() || 'P';
 
@@ -487,9 +536,9 @@ function renderLeaderboard(leaderboardData) {
       <div class="leaderboard-player-info">
         <div class="leaderboard-name-row">
           <span class="leaderboard-name" title="${escapeHtml(player.name)}">${escapeHtml(player.name)}</span>
-          ${player.is_host ? '<span class="badge-host">👑 HOST</span>' : ''}
+          ${player.is_host ? '<span class="badge-host">Host</span>' : ''}
           ${isSelf ? '<span class="badge-you">(Kamu)</span>' : ''}
-          ${isDrawer ? '<span class="badge-drawer">🎨 Drawer</span>' : ''}
+          ${isDrawer ? '<span class="badge-drawer">Menggambar</span>' : ''}
         </div>
       </div>
       <div class="leaderboard-score-box">
@@ -500,6 +549,8 @@ function renderLeaderboard(leaderboardData) {
 
     leaderboardList.appendChild(li);
   });
+
+  renderUiIcons(leaderboardList);
 }
 
 /**
@@ -525,7 +576,7 @@ function handleGameOver({ reason, message, leaderboard } = {}) {
 
   /* 3. Catat di obrolan */
   appendChatMessage({
-    text: `🛑 [GAME OVER] ${message || 'Permainan telah berakhir.'}`,
+    text: `[PERMAINAN SELESAI] ${message || 'Permainan telah berakhir.'}`,
     from: 'system',
     ts:   Date.now(),
     self: false,
@@ -577,9 +628,7 @@ function renderGameOverModal(players, noticeText) {
       li.className = `leaderboard-item rank-${player.rank} ${isSelf ? 'is-self' : ''}`;
 
       let rankDisplay = `#${player.rank}`;
-      if (player.rank === 1) rankDisplay = '🥇 1';
-      else if (player.rank === 2) rankDisplay = '🥈 2';
-      else if (player.rank === 3) rankDisplay = '🥉 3';
+      if (player.rank <= 3) rankDisplay = `${player.rank}`;
 
       const initial = (player.name || 'P').trim().charAt(0).toUpperCase() || 'P';
 
@@ -589,7 +638,7 @@ function renderGameOverModal(players, noticeText) {
         <div class="leaderboard-player-info">
           <div class="leaderboard-name-row">
             <span class="leaderboard-name" title="${escapeHtml(player.name)}">${escapeHtml(player.name)}</span>
-            ${player.is_host ? '<span class="badge-host">👑 HOST</span>' : ''}
+            ${player.is_host ? '<span class="badge-host">Host</span>' : ''}
             ${isSelf ? '<span class="badge-you">(Kamu)</span>' : ''}
           </div>
         </div>
@@ -648,7 +697,7 @@ async function showLobby() {
   leaderboardState.scores = {};
   leaderboardState.list   = [];
   renderLeaderboard([]);
-  if (myScoreBadge) myScoreBadge.textContent = '🏆 0 pts';
+  if (myScoreBadge) myScoreBadge.textContent = '0 pts';
 
   scoreState.correct      = 0;
   scoreState.wrong        = 0;
@@ -713,7 +762,7 @@ function pickWord() {
  */
 function updateRoundBadge(currentRound, totalRounds) {
   if (roundBadge) {
-    roundBadge.textContent = `🔁 Ronde ${currentRound}/${totalRounds}`;
+    roundBadge.textContent = `Ronde ${currentRound}/${totalRounds}`;
   }
 }
 
@@ -819,7 +868,7 @@ function hostStartNextTurn() {
       const finalBoard = buildLeaderboardList(hostState.scores);
       sendGameOver({
         reason:      'all-rounds-done',
-        message:     `🏆 Semua ${hostState.totalRounds} ronde telah selesai! Permainan berakhir.`,
+        message:     `Semua ${hostState.totalRounds} ronde telah selesai! Permainan berakhir.`,
         leaderboard: finalBoard,
         finalScores: hostState.scores,
       }).catch(console.error);
@@ -982,7 +1031,7 @@ onGuessAttempt(async ({ guess, from }) => {
  * ============================================================ */
 
 function updateTimerDisplay(seconds) {
-  timerBadgeEl.textContent = `⏱️ ${seconds}s`;
+  timerBadgeEl.textContent = `${seconds}s`;
   if (seconds <= 10) {
     timerBadgeEl.classList.add('is-urgent');
   } else {
@@ -1010,7 +1059,7 @@ function applyFreeze(initiatorId, duration) {
   powerupState.isFrozen = true;
   guessForm.classList.add('is-frozen');
   guessInput.disabled = true;
-  guessInput.placeholder = '🧊 Tebakan dibekukan...';
+  guessInput.placeholder = 'Tebakan dibekukan...';
   freezeOverlay.classList.remove('hidden');
   freezeNoticeText.textContent = `Tebakan Anda sedang dibekukan oleh Peer ${initiatorId.slice(0, 4)}!`;
 
@@ -1088,7 +1137,7 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt, currentRound, t
     /* [DRAWER]: Canvas aktif untuk menggambar, toolbar terbuka */
     canvasWrapper.classList.remove('is-guesser');
     hostGuessNotice.classList.remove('hidden');
-    hostGuessNotice.textContent = '🎨 Anda sedang menggambar! Biarkan pemain lain menebak.';
+    hostGuessNotice.textContent = 'Anda sedang menggambar. Biarkan pemain lain menebak.';
     guessForm.classList.add('hidden');
 
     /* Tampilkan tombol power-up drawer (Waktu Ekstra), sembunyikan powerup penebak */
@@ -1102,10 +1151,10 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt, currentRound, t
     wordSlotsEl.innerHTML   = `<span class="secret-word-revealed">${escapeHtml(drawerWord)}</span>`;
     wordHintEl.textContent  = '(Hanya Anda yang tahu — gambarlah kata ini!)';
 
-    drawingIndicator.textContent = '🎨 Giliran Anda Menggambar! Gambarlah di canvas.';
+    drawingIndicator.textContent = 'Giliran Anda menggambar di canvas.';
     drawingIndicator.className   = 'drawing-indicator';
 
-    showFeedback('🎨 Giliran Anda menggambar!', 'correct', 2500);
+    showFeedback('Giliran Anda menggambar.', 'correct', 2500);
   } else {
     /* [GUESSER]: Canvas read-only, toolbar disembunyikan, form tebak aktif */
     canvasWrapper.classList.add('is-guesser');
@@ -1123,10 +1172,10 @@ onTurnChange(({ drawerId, drawerWord, hint, duration, startedAt, currentRound, t
     renderGuesserWordSlots(hint);
 
     const drawerLabel = (drawerId === getSelfKey() ? 'Kamu' : `Peer ${drawerId.slice(0, 4)}`);
-    drawingIndicator.textContent = `🔍 ${drawerLabel} sedang menggambar. Perhatikan canvas dan tebak di bawah!`;
+    drawingIndicator.textContent = `${drawerLabel} sedang menggambar. Perhatikan canvas dan tebak kata.`;
     drawingIndicator.className   = 'drawing-indicator';
 
-    showFeedback(`🎨 Giliran ${drawerLabel} menggambar!`, 'correct', 2500);
+    showFeedback(`Giliran ${drawerLabel} menggambar.`, 'correct', 2500);
   }
 
   /* Perbarui badge drawer di papan skor */
@@ -1178,13 +1227,13 @@ onGuessResult(({ isCorrect, guesserId, guess, word, pointsAwarded, drawerPoints,
 
     /* Feedback visual */
     if (isMyGuess) {
-      showFeedback(`🎉 BENAR${ptsInfo}! Tebakanmu tepat: "${word}"${speedInfo}`, 'correct', 3200);
+      showFeedback(`BENAR${ptsInfo}! Tebakanmu tepat: "${word}"${speedInfo}`, 'correct', 3200);
     } else {
-      showFeedback(`🎉 ${guesserName}${ptsInfo} berhasil menebak: "${word}"!`, 'correct', 3200);
+      showFeedback(`${guesserName}${ptsInfo} berhasil menebak: "${word}"!`, 'correct', 3200);
     }
 
     /* Notifikasi chat */
-    let chatText = `🏆 [TEBAKAN BENAR] ${guesserName}${ptsInfo} berhasil menebak: "${word}"!`;
+    let chatText = `[TEBAKAN BENAR] ${guesserName}${ptsInfo} berhasil menebak: "${word}"!`;
     if (drawerPoints && drawerId) {
       const isDrawerMe = (drawerId === getSelfKey());
       const dLabel = isDrawerMe ? 'Kamu (Drawer)' : `Drawer`;
@@ -1217,7 +1266,7 @@ onGuessResult(({ isCorrect, guesserId, guess, word, pointsAwarded, drawerPoints,
       updateRoundBadge(roundInfo.currentRound, roundInfo.totalRounds);
     }
     appendChatMessage({
-      text: `🔁 [RONDE BARU] Ronde ${roundInfo?.currentRound || '?'} dari ${roundInfo?.totalRounds || '?'} dimulai!`,
+      text: `[RONDE BARU] Ronde ${roundInfo?.currentRound || '?'} dari ${roundInfo?.totalRounds || '?'} dimulai!`,
       from: 'system',
       ts:   Date.now(),
       self: false,
@@ -1363,13 +1412,13 @@ onPowerupApplied(({ powerup, hint, initiatorId, duration, from, self }) => {
     if (self) {
       powerupState.usedRevealThisTurn = true;
       btnPowerupReveal.disabled = true;
-      showFeedback('💡 Anda membuka 1 huruf bantuan!', 'correct', 2500);
+      showFeedback('Anda membuka 1 huruf bantuan.', 'correct', 2500);
     } else {
-      showFeedback(`💡 Peer ${from.slice(0, 4)} membuka 1 huruf bantuan!`, 'correct', 2000);
+      showFeedback(`Pemain ${from.slice(0, 4)} membuka 1 huruf bantuan.`, 'correct', 2000);
     }
 
     appendChatMessage({
-      text: `💡 [POWER-UP] ${self ? 'Kamu' : `Peer ${from.slice(0, 4)}`} membuka 1 huruf bantuan!`,
+        text: `[POWER-UP] ${self ? 'Kamu' : `Pemain ${from.slice(0, 4)}`} membuka 1 huruf bantuan.`,
       from: 'system',
       ts:   Date.now(),
       self,
@@ -1380,7 +1429,7 @@ onPowerupApplied(({ powerup, hint, initiatorId, duration, from, self }) => {
     if (isMeInitiator) {
       powerupState.usedFreezeThisTurn = true;
       btnPowerupFreeze.disabled = true;
-      showFeedback('🧊 Anda membekukan lawan selama 5 detik! Ayo tebak!', 'correct', 3000);
+      showFeedback('Tebakan lawan dibekukan selama 5 detik.', 'correct', 3000);
     } else if (!state.isDrawer) {
       /* Penebak lawan terkena efek beku */
       applyFreeze(initiatorId, duration || 5);
@@ -1388,7 +1437,7 @@ onPowerupApplied(({ powerup, hint, initiatorId, duration, from, self }) => {
 
     const name = isMeInitiator ? 'Kamu' : `Peer ${initiatorId.slice(0, 4)}`;
     appendChatMessage({
-      text: `🧊 [POWER-UP] ${name} membekukan tebakan semua lawan selama ${duration || 5}s!`,
+        text: `[POWER-UP] ${name} membekukan tebakan semua lawan selama ${duration || 5}s!`,
       from: 'system',
       ts:   Date.now(),
       self: isMeInitiator,
@@ -1443,10 +1492,10 @@ btnPowerupTime.addEventListener('click', () => {
  * ============================================================ */
 
 const CONN_LABEL = {
-  connecting:   '⬤ Menghubungkan…',
-  connected:    '⬤ Terhubung',
-  disconnected: '⬤ Terputus',
-  error:        '⬤ Error',
+  connecting:   'Menghubungkan…',
+  connected:    'Terhubung',
+  disconnected: 'Terputus',
+  error:        'Error',
 };
 
 onStatusChange((status) => {
@@ -1455,7 +1504,7 @@ onStatusChange((status) => {
 });
 
 onMemberChange((count, members) => {
-  roomMembersEl.textContent = `👥 ${count} pemain`;
+  roomMembersEl.textContent = `${count} pemain`;
 
   /* [AUTHORITATIVE - HOST]: Update urutan pemain saat ada perubahan anggota */
   if (state.isHost) {
@@ -1480,7 +1529,7 @@ onMemberPresence((members) => {
       if (!hasHost) {
         handleGameOver({
           reason:      'host-left',
-          message:     '👑 Host telah meninggalkan room. Permainan telah berakhir.',
+          message:     'Host telah meninggalkan room. Permainan telah berakhir.',
           leaderboard: leaderboardState.list,
         });
       }
@@ -1491,7 +1540,7 @@ onMemberPresence((members) => {
 onPlayerJoined(({ player, from, self }) => {
   if (self) return;
   appendChatMessage({
-    text: `👋 ${player?.name || `Peer ${from.slice(0, 4)}`} bergabung ke room.`,
+    text: `${player?.name || `Pemain ${from.slice(0, 4)}`} bergabung ke room.`,
     from: 'system',
     ts:   Date.now(),
     self: false,
@@ -1501,7 +1550,7 @@ onPlayerJoined(({ player, from, self }) => {
 onPlayerLeft(({ playerId, from, self }) => {
   if (self) return;
   appendChatMessage({
-    text: `🚪 Pemain ${playerId.slice(0, 4)} keluar dari room.`,
+    text: `Pemain ${playerId.slice(0, 4)} keluar dari room.`,
     from: 'system',
     ts:   Date.now(),
     self: false,
@@ -1514,7 +1563,7 @@ onPlayerLeft(({ playerId, from, self }) => {
     if (wasHost) {
       handleGameOver({
         reason:      'host-left',
-        message:     '👑 Host telah keluar dari room. Permainan telah berakhir.',
+        message:     'Host telah keluar dari room. Permainan telah berakhir.',
         leaderboard: leaderboardState.list,
       });
     }
@@ -1593,10 +1642,10 @@ onGameStart(({ roomCode, players, firstDrawerId, startedAt, totalRounds }) => {
     /* Non-host client: siapkan role sesuai undian firstDrawerId */
     if (isMeDrawer) {
       canvasWrapper.classList.remove('is-guesser');
-      drawingIndicator.textContent = '🎨 Giliran Anda Menggambar! Gambarlah di canvas.';
+      drawingIndicator.textContent = 'Giliran Anda menggambar di canvas.';
       drawingIndicator.className   = 'drawing-indicator';
       hostGuessNotice.classList.remove('hidden');
-      hostGuessNotice.textContent  = '🎨 Anda sedang menggambar! Biarkan pemain lain menebak.';
+      hostGuessNotice.textContent  = 'Anda sedang menggambar. Biarkan pemain lain menebak.';
       guessForm.classList.add('hidden');
     } else {
       canvasWrapper.classList.add('is-guesser');
@@ -1620,7 +1669,7 @@ btnCreateRoom.addEventListener('click', async () => {
   const code = generateRoomCode();
 
   btnCreateRoom.disabled    = true;
-  btnCreateRoom.textContent = '✦ Menyiapkan…';
+  setButtonLabel(btnCreateRoom, 'plus', 'Menyiapkan…');
   joinErrorEl.textContent   = '';
 
   try {
@@ -1649,7 +1698,7 @@ btnCreateRoom.addEventListener('click', async () => {
     }
   } finally {
     btnCreateRoom.disabled    = false;
-    btnCreateRoom.textContent = '✦ Buat Room';
+    setButtonLabel(btnCreateRoom, 'plus', 'Buat Room');
   }
 });
 
@@ -1673,7 +1722,7 @@ joinForm.addEventListener('submit', async (e) => {
 
   if (btnJoinRoom) {
     btnJoinRoom.disabled    = true;
-    btnJoinRoom.textContent = '…';
+    setButtonLabel(btnJoinRoom, 'log-in', 'Masuk…');
   }
 
   try {
@@ -1724,7 +1773,7 @@ joinForm.addEventListener('submit', async (e) => {
   } finally {
     if (btnJoinRoom) {
       btnJoinRoom.disabled    = false;
-      btnJoinRoom.textContent = 'Masuk →';
+      setButtonLabel(btnJoinRoom, 'log-in', 'Masuk Room');
     }
   }
 });
@@ -1766,7 +1815,7 @@ btnStartGame.addEventListener('click', async () => {
   if (!state.isHost) return;
 
   btnStartGame.disabled    = true;
-  btnStartGame.textContent = '🚀 Memulai Permainan…';
+  setButtonLabel(btnStartGame, 'play', 'Memulai permainan…');
   waitingError.textContent = '';
 
   /* Ambil jumlah ronde yang dipilih host */
@@ -1813,7 +1862,7 @@ btnStartGame.addEventListener('click', async () => {
     console.error('[sendGameStart error]', err);
     waitingError.textContent = `Gagal memulai game: ${err.message}`;
     btnStartGame.disabled    = false;
-    btnStartGame.textContent = '🚀 Mulai Permainan';
+    setButtonLabel(btnStartGame, 'play', 'Mulai permainan');
   }
 });
 
@@ -1826,7 +1875,7 @@ btnLeaveRoom.addEventListener('click', async () => {
     try {
       await sendGameOver({
         reason:      'host-left',
-        message:     '👑 Host telah meninggalkan room. Permainan telah berakhir.',
+        message:     'Host telah meninggalkan room. Permainan telah berakhir.',
         leaderboard: finalBoard,
         finalScores: hostState.scores,
       });
@@ -2024,7 +2073,7 @@ let peerDrawingTimeout = null;
 
 function showPeerDrawing(from) {
   drawingIndicator.classList.add('is-peer-drawing');
-  drawingIndicator.textContent = `🎨 Peer ${from.slice(0, 4)} sedang menggambar...`;
+  drawingIndicator.textContent = `Pemain ${from.slice(0, 4)} sedang menggambar...`;
 
   clearTimeout(peerDrawingTimeout);
   peerDrawingTimeout = setTimeout(() => {
@@ -2072,7 +2121,7 @@ onStroke(({ stroke, from, self }) => {
 onClear(({ from, self }) => {
   if (self) return;
   clearCanvas();
-  drawingIndicator.textContent = `🗑 Canvas dibersihkan oleh Peer ${from.slice(0, 4)}`;
+  drawingIndicator.textContent = `Canvas dibersihkan oleh pemain ${from.slice(0, 4)}`;
 });
 
 /* ============================================================
@@ -2088,9 +2137,12 @@ function updateCursor(e) {
   /* Pastikan kursor selalu terlihat saat pointer bergerak di canvas */
   brushCursor.style.display = 'block';
 
-  const rect = canvas.getBoundingClientRect();
-  const x    = e.clientX - rect.left;
-  const y    = e.clientY - rect.top;
+  // The cursor is positioned inside .canvas-stage, not inside the canvas.
+  // Keeping both calculations in the stage coordinate space prevents a
+  // vertical offset when the stage has spare height in the viewport layout.
+  const stageRect = brushCursor.parentElement.getBoundingClientRect();
+  const x         = e.clientX - stageRect.left;
+  const y         = e.clientY - stageRect.top;
 
   brushCursor.style.left   = `${x}px`;
   brushCursor.style.top    = `${y}px`;
@@ -2214,7 +2266,7 @@ function triggerShake() {
 guessForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (powerupState.isFrozen) {
-    showFeedback('🧊 Anda sedang dibekukan! Tunggu efek beku berakhir.', 'wrong', 1600);
+    showFeedback('Tebakan Anda sedang dibekukan. Tunggu hingga efek berakhir.', 'wrong', 1600);
     triggerShake();
     return;
   }
