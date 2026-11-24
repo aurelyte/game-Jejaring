@@ -78,6 +78,9 @@ const _playerLeftListeners = [];
 /** @type {Array<(msg: {roomCode: string, players: any[], firstDrawerId: string, startedAt: any, from: string, ts: number, self: boolean}) => void>} */
 const _gameStartListeners = [];
 
+/** @type {Array<(msg: {playerId: string, playerName: string, from: string, ts: number, self: boolean}) => void>} */
+const _kickPlayerListeners = [];
+
 /** @type {Array<(msg: {scores: Record<string, number>, leaderboard: any[], lastAward?: any, from: string, ts: number, self: boolean}) => void>} */
 const _scoreUpdateListeners = [];
 
@@ -136,6 +139,9 @@ export function onPlayerLeft(fn) { _playerLeftListeners.push(fn); }
 /** @param {(msg: {roomCode: string, players: any[], firstDrawerId: string, startedAt: any, from: string, ts: number, self: boolean}) => void} fn */
 export function onGameStart(fn) { _gameStartListeners.push(fn); }
 
+/** @param {(msg: {playerId: string, playerName: string, from: string, ts: number, self: boolean}) => void} fn */
+export function onKickPlayer(fn) { _kickPlayerListeners.push(fn); }
+
 /** @param {(msg: {scores: Record<string, number>, leaderboard: any[], lastAward?: any, from: string, ts: number, self: boolean}) => void} fn */
 export function onScoreUpdate(fn) { _scoreUpdateListeners.push(fn); }
 
@@ -158,6 +164,7 @@ function _emitPowerupEnd(msg)      { _powerupEndListeners.forEach((fn) => fn(msg
 function _emitPlayerJoined(msg)    { _playerJoinedListeners.forEach((fn) => fn(msg)); }
 function _emitPlayerLeft(msg)      { _playerLeftListeners.forEach((fn) => fn(msg)); }
 function _emitGameStart(msg)       { _gameStartListeners.forEach((fn) => fn(msg)); }
+function _emitKickPlayer(msg)      { _kickPlayerListeners.forEach((fn) => fn(msg)); }
 function _emitScoreUpdate(msg)     { _scoreUpdateListeners.forEach((fn) => fn(msg)); }
 function _emitGameOver(msg)        { _gameOverListeners.forEach((fn) => fn(msg)); }
 
@@ -343,6 +350,18 @@ export function joinRoom(roomCode, { name, isHost = false } = {}) {
         from:     payload.from,
         ts:       payload.ts,
         self:     payload.from === getSelfKey(),
+      });
+    });
+
+    /* ---- Broadcast: kick-player (Waiting Room Kick by Host) ---- */
+    _channel.on('broadcast', { event: 'kick-player' }, ({ payload }) => {
+      if (!payload) return;
+      _emitKickPlayer({
+        playerId:   payload.playerId,
+        playerName: payload.playerName,
+        from:       payload.from,
+        ts:         payload.ts,
+        self:       payload.from === getSelfKey(),
       });
     });
 
@@ -853,15 +872,55 @@ export async function sendGameStart(payload) {
     ts:   Date.now(),
   };
 
-  /* Siarkan event game-start ke seluruh peer terlebih dahulu */
-  await _channel.send({
-    type:    'broadcast',
-    event:   'game-start',
-    payload: fullPayload,
-  });
-
-  /* Host memproses transisi ke permainan secara lokal */
+  /* Host memproses transisi ke permainan secara lokal terlebih dahulu agar UI instan dan tidak macet */
   _emitGameStart({ ...fullPayload, self: true });
+
+  /* Siarkan event game-start ke seluruh peer via Realtime channel dengan timeout pengaman */
+  try {
+    await Promise.race([
+      _channel.send({
+        type:    'broadcast',
+        event:   'game-start',
+        payload: fullPayload,
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('SEND_TIMEOUT')), 3000)),
+    ]);
+  } catch (err) {
+    console.warn('[sendGameStart] broadcast send notice:', err?.message || err);
+  }
+}
+
+/**
+ * sendKickPlayer - Host broadcasts kick action for a specific player in waiting room.
+ *
+ * @param {object} params
+ * @param {string} params.playerId
+ * @param {string} params.playerName
+ */
+export async function sendKickPlayer({ playerId, playerName }) {
+  if (!_channel) return;
+
+  const payload = {
+    playerId,
+    playerName,
+    from: getSelfKey(),
+    ts:   Date.now(),
+  };
+
+  _emitKickPlayer({ ...payload, self: true });
+
+  try {
+    await Promise.race([
+      _channel.send({
+        type:    'broadcast',
+        event:   'kick-player',
+        payload,
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('SEND_TIMEOUT')), 3000)),
+    ]);
+  } catch (err) {
+    console.warn('[sendKickPlayer] broadcast send notice:', err?.message || err);
+  }
 }
 
 /**
@@ -979,7 +1038,7 @@ export async function dbCreateRoom(roomCode, playerId, playerName) {
       p_room_code:        roomCode,
       p_host_player_id:   playerId,
       p_host_player_name: playerName,
-      p_max_players:      8,
+      p_max_players:      16,
     });
 
     if (error) {
@@ -1034,17 +1093,23 @@ export async function dbJoinRoom(roomCode, playerId, playerName) {
 
 /**
  * dbStartRoom - Host starts room with database transaction row-lock & randomized drawer.
- * Jika RPC belum ada di database, memicu fallback ke pemilihan acak in-memory.
+ * Jika RPC belum ada di database atau timeout (overload), memicu fallback ke pemilihan acak in-memory.
  */
 export async function dbStartRoom(roomCode, hostPlayerId, minPlayers = 1) {
   if (!supabase) return { success: false, fallback: true, error: 'Database Supabase tidak terhubung' };
 
   try {
-    const { data, error } = await supabase.rpc('start_room_rpc', {
+    const rpcPromise = supabase.rpc('start_room_rpc', {
       p_room_code:      roomCode,
       p_host_player_id: hostPlayerId,
       p_min_players:    minPlayers,
     });
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('RPC_TIMEOUT')), 2500)
+    );
+
+    const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
 
     if (error) {
       if (isSchemaMissing(error)) {
@@ -1056,8 +1121,8 @@ export async function dbStartRoom(roomCode, hostPlayerId, minPlayers = 1) {
     }
     return data;
   } catch (err) {
-    console.warn('[dbStartRoom] error:', err);
-    return { success: false, fallback: true, error: err.message };
+    console.warn('[dbStartRoom] error or timeout, fallback to in-memory:', err?.message || err);
+    return { success: false, fallback: true, error: err?.message || 'RPC timeout' };
   }
 }
 

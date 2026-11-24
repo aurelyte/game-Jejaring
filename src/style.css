@@ -666,6 +666,46 @@ body {
   min-width: 0;
 }
 
+.waiting-player-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.btn-kick-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-kick-player:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #ffffff;
+}
+
+.btn-kick-player:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-kick-player .ui-icon {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+
 .waiting-player-name {
   font-size: 0.92rem;
   font-weight: 600;
@@ -2175,12 +2215,14 @@ body {
  * ============================================================ */
 body:has(#gameScreen:not(.hidden)) {
   padding: 8px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 #app:has(#gameScreen:not(.hidden)) {
   max-width: 1280px;
-  height: calc(100dvh - 16px);
+  min-height: calc(100dvh - 16px);
+  height: auto;
 }
 
 body:has(#gameScreen:not(.hidden)) .studio-header {
@@ -2188,11 +2230,11 @@ body:has(#gameScreen:not(.hidden)) .studio-header {
 }
 
 .game-screen:not(.hidden) {
-  min-height: 0;
-  height: 100%;
+  min-height: calc(100dvh - 32px);
+  height: auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(330px, 0.43fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(280px, 1fr) auto;
   grid-template-areas:
     "hud hud"
     "status side"
@@ -2229,9 +2271,12 @@ body:has(#gameScreen:not(.hidden)) .studio-header {
 .game-screen:not(.hidden) .canvas-wrapper {
   grid-area: board;
   min-width: 0;
-  min-height: 0;
-  height: auto;
-  align-self: start;
+  min-height: 280px;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-radius: 10px;
   border-color: var(--border-medium);
   box-shadow: none;
@@ -2243,6 +2288,7 @@ body:has(#gameScreen:not(.hidden)) .studio-header {
   gap: 8px;
   flex-wrap: nowrap;
   overflow-x: auto;
+  flex-shrink: 0;
 }
 
 .game-screen:not(.hidden) .swatch {
@@ -2256,56 +2302,86 @@ body:has(#gameScreen:not(.hidden)) .studio-header {
 }
 
 .game-screen:not(.hidden) .canvas-stage {
-  flex: 0 0 auto;
-  min-height: auto;
-  display: block;
+  flex: 1 1 auto;
+  min-height: 240px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
   background: #f4f3ee;
 }
 
 .game-screen:not(.hidden) #drawCanvas {
-  /* The canvas height remains owned by the existing resize routine. */
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .game-screen:not(.hidden) .guess-section {
   grid-area: controls;
   min-width: 0;
   margin: 0;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: 10px;
   box-shadow: none;
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
 }
 
 .game-screen:not(.hidden) .word-display {
+  display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   justify-content: flex-start;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
-  margin: 0 0 7px;
+  min-height: 36px;
+  margin: 0 0 8px;
 }
 
 .game-screen:not(.hidden) .word-label,
 .game-screen:not(.hidden) .powerup-title {
-  font-size: 0.72rem;
-  letter-spacing: 0;
-  text-transform: none;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .game-screen:not(.hidden) .word-slots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-start;
-  gap: 4px;
-  min-height: 26px;
+  gap: 5px;
+  min-height: 32px;
 }
 
 .game-screen:not(.hidden) .letter-slot,
 .game-screen:not(.hidden) .letter-slot.space-gap {
-  width: 24px;
-  height: 28px;
-  border-width: 1px;
-  border-radius: 5px;
-  font-size: 0.88rem;
+  width: 26px;
+  height: 32px;
+  border-width: 1.5px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 800;
   box-shadow: none;
+}
+
+.game-screen:not(.hidden) .secret-word-revealed {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1.5px solid rgba(245, 158, 11, 0.45);
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
 }
 
 .game-screen:not(.hidden) .letter-slot.space-gap { width: 8px; }

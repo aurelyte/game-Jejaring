@@ -44,6 +44,7 @@ import {
   sendGameStart,
   sendScoreUpdate,
   sendGameOver,
+  sendKickPlayer,
   onStatusChange,
   onMemberChange,
   onMemberPresence,
@@ -62,6 +63,7 @@ import {
   onGameStart,
   onScoreUpdate,
   onGameOver,
+  onKickPlayer,
   getSelfKey,
   getPlayerName,
   setPlayerName,
@@ -94,6 +96,7 @@ import {
   Trash2,
   Trophy,
   UserRound,
+  UserX,
   Zap,
   createIcons,
 } from 'lucide';
@@ -114,6 +117,7 @@ const UI_ICONS = {
   Trash2,
   Trophy,
   UserRound,
+  UserX,
   Zap,
 };
 
@@ -270,6 +274,10 @@ const leaderboardState = {
   list:   [], // Array<{ id, name, score, rank, is_drawer, is_host }>
 };
 
+/* State moderasi room & resilience */
+const kickedPlayerIds = new Set();
+let hostMissingTimer  = null;
+
 /* ============================================================
  * DOM refs
  * ============================================================ */
@@ -402,7 +410,7 @@ function renderWaitingPlayerList(members) {
     ? members
     : [{ id: getSelfKey(), name: getPlayerName(), is_host: state.isHost, online: true }];
 
-  waitingPlayerCountBadge.textContent = `${list.length}/8 Pemain`;
+  waitingPlayerCountBadge.textContent = `${list.length}/16 Pemain`;
   waitingPlayerList.innerHTML = '';
 
   list.forEach((p) => {
@@ -419,7 +427,15 @@ function renderWaitingPlayerList(members) {
         ${p.is_host ? '<span class="badge-host">Host</span>' : ''}
         ${isSelf ? '<span class="badge-you">(Kamu)</span>' : ''}
       </div>
-      <span class="online-dot" title="Online">Online</span>
+      <div class="waiting-player-actions">
+        <span class="online-dot" title="Online">Online</span>
+        ${(state.isHost && !isSelf && !p.is_host) ? `
+          <button class="btn-kick-player" data-player-id="${escapeHtml(p.id)}" data-player-name="${escapeHtml(p.name || 'Pemain')}" title="Keluarkan ${escapeHtml(p.name || 'Pemain')} dari ruang tunggu">
+            <i data-lucide="user-x" class="ui-icon" aria-hidden="true"></i>
+            <span>Kick</span>
+          </button>
+        ` : ''}
+      </div>
     `;
     waitingPlayerList.appendChild(li);
   });
@@ -568,6 +584,10 @@ function handleGameOver({ reason, message, leaderboard } = {}) {
   clearTimeout(nextRoundTimer);
   clearTimeout(hostState.freezeTimeout);
   clearInterval(localFreezeInterval);
+  if (hostMissingTimer) {
+    clearTimeout(hostMissingTimer);
+    hostMissingTimer = null;
+  }
   unfreezeUI();
 
   /* 2. Kunci kanvas gambar */
@@ -664,6 +684,12 @@ if (btnGameOverLeave) {
 async function showLobby() {
   if (gameOverModal) gameOverModal.classList.add('hidden');
   await leaveRoom();
+
+  if (hostMissingTimer) {
+    clearTimeout(hostMissingTimer);
+    hostMissingTimer = null;
+  }
+  kickedPlayerIds.clear();
 
   clearInterval(hostState.timerInterval);
   clearInterval(localTimerInterval);
@@ -841,8 +867,8 @@ function hostStartNextTurn() {
     hostState.playerOrder = [getSelfKey()];
   } else {
     /* Pertahankan urutan yang ada, tambahkan anggota baru di akhir */
-    const existing = hostState.playerOrder.filter((k) => members.includes(k));
-    const brandNew = members.filter((k) => !existing.includes(k));
+    const existing = hostState.playerOrder.filter((k) => members.includes(k) && !kickedPlayerIds.has(k));
+    const brandNew = members.filter((k) => !existing.includes(k) && !kickedPlayerIds.has(k));
     hostState.playerOrder = [...existing, ...brandNew];
   }
 
@@ -1523,15 +1549,29 @@ onMemberPresence((members) => {
   if (gameScreen && !gameScreen.classList.contains('hidden')) {
     renderLeaderboard();
 
-    /* Jika host keluar dari room saat game aktif: selesaikan permainan langsung */
+    /* Jika host keluar dari room saat game aktif: beri grace period 5 detik agar transient network/presence drop tidak crash game */
     if (!state.isHost && Array.isArray(members) && members.length > 0) {
       const hasHost = members.some((m) => m.is_host);
       if (!hasHost) {
-        handleGameOver({
-          reason:      'host-left',
-          message:     'Host telah meninggalkan room. Permainan telah berakhir.',
-          leaderboard: leaderboardState.list,
-        });
+        if (!hostMissingTimer) {
+          hostMissingTimer = setTimeout(() => {
+            const currentMembers = getMemberDetails();
+            const stillMissing = !currentMembers.some((m) => m.is_host);
+            if (stillMissing && !state.isHost && gameScreen && !gameScreen.classList.contains('hidden')) {
+              handleGameOver({
+                reason:      'host-left',
+                message:     'Host telah meninggalkan room. Permainan telah berakhir.',
+                leaderboard: leaderboardState.list,
+              });
+            }
+            hostMissingTimer = null;
+          }, 5000);
+        }
+      } else {
+        if (hostMissingTimer) {
+          clearTimeout(hostMissingTimer);
+          hostMissingTimer = null;
+        }
       }
     }
   }
@@ -1539,6 +1579,13 @@ onMemberPresence((members) => {
 
 onPlayerJoined(({ player, from, self }) => {
   if (self) return;
+  const joinedId = player?.player_id || player?.id || from;
+  if (state.isHost && joinedId && kickedPlayerIds.has(joinedId)) {
+    const code = currentRoom() || waitingRoomCode.textContent.trim();
+    sendKickPlayer({ playerId: joinedId, playerName: player?.name || 'Pemain' });
+    dbLeaveRoom(code, joinedId);
+    return;
+  }
   appendChatMessage({
     text: `${player?.name || `Pemain ${from.slice(0, 4)}`} bergabung ke room.`,
     from: 'system',
@@ -1568,6 +1615,25 @@ onPlayerLeft(({ playerId, from, self }) => {
       });
     }
   }
+});
+
+/* Listener event kick-player dari Host */
+onKickPlayer(({ playerId, playerName, self }) => {
+  const selfKey = getSelfKey();
+  if (playerId === selfKey) {
+    leaveRoom().then(() => {
+      showLobby();
+      joinErrorEl.textContent = '⚠️ Anda telah dikeluarkan dari ruang tunggu oleh Host.';
+    });
+    return;
+  }
+
+  appendChatMessage({
+    text: `${playerName || 'Pemain'} telah dikeluarkan dari ruang tunggu oleh Host.`,
+    from: 'system',
+    ts:   Date.now(),
+    self: false,
+  });
 });
 
 /* Event game-over saat Host mengakhiri/meninggalkan room */
@@ -1810,6 +1876,35 @@ btnCopyCode.addEventListener('click', async () => {
   }, 1800);
 });
 
+/* Host kick pemain dari waiting list */
+waitingPlayerList.addEventListener('click', async (e) => {
+  const btn = /** @type {HTMLElement} */ (e.target).closest('.btn-kick-player');
+  if (!btn || !state.isHost) return;
+
+  const targetId = btn.getAttribute('data-player-id');
+  const targetName = btn.getAttribute('data-player-name') || 'Pemain';
+  if (!targetId || targetId === getSelfKey()) return;
+
+  btn.setAttribute('disabled', 'true');
+  kickedPlayerIds.add(targetId);
+
+  const code = currentRoom() || waitingRoomCode.textContent.trim();
+
+  try {
+    await sendKickPlayer({ playerId: targetId, playerName: targetName });
+    await dbLeaveRoom(code, targetId);
+    appendChatMessage({
+      text: `${targetName} telah dikeluarkan dari ruang tunggu oleh Host.`,
+      from: 'system',
+      ts:   Date.now(),
+      self: false,
+    });
+  } catch (err) {
+    console.error('[kick error]', err);
+    btn.removeAttribute('disabled');
+  }
+});
+
 /* Tombol Start Game (Khusus Host) — Menjalankan Undian Acak First Drawer */
 btnStartGame.addEventListener('click', async () => {
   if (!state.isHost) return;
@@ -1827,28 +1922,42 @@ btnStartGame.addEventListener('click', async () => {
   let firstDrawerId = null;
   let finalPlayers  = [];
 
-  /* Panggil RPC database dengan lock row SELECT ... FOR UPDATE */
+  const presenceMembers = getMemberDetails();
+  const onlineCandidates = (Array.isArray(presenceMembers) && presenceMembers.length > 0)
+    ? presenceMembers
+    : [{ id: selfKey, name: getPlayerName(), is_host: true }];
+
+  /* Panggil RPC database dengan lock row SELECT ... FOR UPDATE (dengan timeout fallback) */
   const res = await dbStartRoom(code, selfKey, 1);
 
   if (res && res.success && res.first_drawer_id) {
     firstDrawerId = res.first_drawer_id;
-    finalPlayers  = res.players || getMemberDetails();
+    // Pastikan firstDrawerId online; jika offline, pilih dari onlineCandidates
+    const isDrawerOnline = onlineCandidates.some((c) => c.id === firstDrawerId);
+    if (!isDrawerOnline) {
+      const randomPick = onlineCandidates[Math.floor(Math.random() * onlineCandidates.length)];
+      firstDrawerId = randomPick.id;
+    }
+    // Gabungkan candidate online dengan DB players agar tidak ada pemain aktif yang tertinggal
+    const dbPlayers = Array.isArray(res.players) ? res.players : [];
+    const mergedMap = new Map();
+    onlineCandidates.forEach((p) => mergedMap.set(p.id, p));
+    dbPlayers.forEach((p) => {
+      const pid = p.player_id || p.id;
+      if (pid && !mergedMap.has(pid)) mergedMap.set(pid, p);
+    });
+    finalPlayers = Array.from(mergedMap.values());
   } else {
-    /* Fallback in-memory jika schema database belum di-apply di Supabase SQL Editor */
+    /* Fallback in-memory jika timeout atau error */
     console.warn('[Start Game] RPC fallback to in-memory randomized selection:', res?.error);
-    const presenceMembers = getMemberDetails();
-    const candidateList   = presenceMembers.length > 0
-      ? presenceMembers
-      : [{ id: selfKey, name: getPlayerName(), is_host: true }];
-
-    const randomPick = candidateList[Math.floor(Math.random() * candidateList.length)];
+    const randomPick = onlineCandidates[Math.floor(Math.random() * onlineCandidates.length)];
     firstDrawerId = randomPick.id;
-    finalPlayers  = candidateList;
+    finalPlayers  = onlineCandidates;
   }
 
   try {
-    /* Tandai status game 'started' di presence channel */
-    await setPresenceGameStatus('started');
+    /* Tandai status game 'started' di presence channel secara non-blocking */
+    setPresenceGameStatus('started').catch((err) => console.warn('[presence setStatus warning]', err));
 
     /* Broadcast event 'game-start' ke seluruh anggota di room */
     await sendGameStart({
@@ -1889,12 +1998,23 @@ btnLeaveRoom.addEventListener('click', async () => {
  * ============================================================ */
 
 function resize() {
-  const rect = canvas.getBoundingClientRect();
-  const cssWidth = canvas.clientWidth || rect.width;
-  if (!cssWidth || cssWidth === 0) return;
+  const stage = document.getElementById('canvasStage') || canvas.parentElement;
+  const stageWidth = stage ? stage.clientWidth : canvas.clientWidth;
+  const stageHeight = stage ? stage.clientHeight : 0;
+
+  if (!stageWidth || stageWidth <= 0) return;
+
+  const targetAspect = 16 / 9;
+  let cssWidth = stageWidth;
+  let cssHeight = Math.round(cssWidth / targetAspect);
+
+  /* Jika stageHeight dibatasi dan cssHeight melebihi stageHeight, batasi berdasarkan stageHeight */
+  if (stageHeight > 0 && cssHeight > stageHeight) {
+    cssHeight = stageHeight;
+    cssWidth = Math.round(cssHeight * targetAspect);
+  }
 
   const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const cssHeight = Math.round(cssWidth * (9 / 16));
 
   const tmp  = document.createElement('canvas');
   tmp.width  = canvas.width;
@@ -1903,7 +2023,7 @@ function resize() {
     tmp.getContext('2d').drawImage(canvas, 0, 0);
   }
 
-  canvas.style.width  = '100%';
+  canvas.style.width  = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
 
   canvas.width  = Math.round(cssWidth * dpr);
