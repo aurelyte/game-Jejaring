@@ -200,8 +200,8 @@ export function getMemberDetails() { return [..._memberDetails]; }
  * @returns {string}
  */
 export function getSelfKey() {
-  const K = 'tebak-gambar:presence-key';
-  let k = sessionStorage.getItem(K);
+  const K = 'sketchin:presence-key';
+  let k = sessionStorage.getItem(K) || sessionStorage.getItem('tebak-gambar:presence-key');
   if (!k) {
     k = Math.random().toString(36).slice(2, 10);
     sessionStorage.setItem(K, k);
@@ -213,8 +213,8 @@ export function getSelfKey() {
  * getPlayerName - Ambil nama pemain dari sessionStorage (atau default).
  */
 export function getPlayerName() {
-  const K = 'tebak-gambar:player-name';
-  let name = sessionStorage.getItem(K);
+  const K = 'sketchin:player-name';
+  let name = sessionStorage.getItem(K) || sessionStorage.getItem('tebak-gambar:player-name');
   if (!name || !name.trim()) {
     name = `Pemain ${getSelfKey().slice(0, 4)}`;
     sessionStorage.setItem(K, name);
@@ -226,7 +226,7 @@ export function getPlayerName() {
  * setPlayerName - Simpan nama pemain ke sessionStorage.
  */
 export function setPlayerName(name) {
-  const K = 'tebak-gambar:player-name';
+  const K = 'sketchin:player-name';
   const clean = (name || '').trim();
   if (clean) {
     sessionStorage.setItem(K, clean);
@@ -238,7 +238,7 @@ export function setPlayerName(name) {
  * getSavedRoomCode - Ambil kode room aktif dari sessionStorage untuk reconnect.
  */
 export function getSavedRoomCode() {
-  return sessionStorage.getItem('tebak-gambar:room-code');
+  return sessionStorage.getItem('sketchin:room-code') || sessionStorage.getItem('tebak-gambar:room-code');
 }
 
 /**
@@ -246,8 +246,9 @@ export function getSavedRoomCode() {
  */
 export function setSavedRoomCode(code) {
   if (code) {
-    sessionStorage.setItem('tebak-gambar:room-code', code.toUpperCase().trim());
+    sessionStorage.setItem('sketchin:room-code', code.toUpperCase().trim());
   } else {
+    sessionStorage.removeItem('sketchin:room-code');
     sessionStorage.removeItem('tebak-gambar:room-code');
   }
 }
@@ -256,14 +257,14 @@ export function setSavedRoomCode(code) {
  * getSavedIsHost - Ambil status host dari sessionStorage.
  */
 export function getSavedIsHost() {
-  return sessionStorage.getItem('tebak-gambar:is-host') === 'true';
+  return (sessionStorage.getItem('sketchin:is-host') || sessionStorage.getItem('tebak-gambar:is-host')) === 'true';
 }
 
 /**
  * setSavedIsHost - Simpan status host ke sessionStorage.
  */
 export function setSavedIsHost(isHost) {
-  sessionStorage.setItem('tebak-gambar:is-host', isHost ? 'true' : 'false');
+  sessionStorage.setItem('sketchin:is-host', isHost ? 'true' : 'false');
 }
 
 /* ============================================================

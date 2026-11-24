@@ -1,5 +1,5 @@
 /**
- * src/main.js — Tebak Gambar
+ * src/main.js — Sketchin
  *
  * Fase 1b: canvas gambar lokal, 100% client-side.
  * Fase 1c: guess box lokal — tebak kata hardcoded, belum multiplayer.

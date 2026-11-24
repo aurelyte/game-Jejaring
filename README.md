@@ -1,6 +1,6 @@
-# Tebak Gambar
+# Sketchin
 
-Tebak Gambar adalah aplikasi permainan tebak gambar multipemain (multiplayer) berbasis web yang berjalan secara real-time. Pemain bergantian menggambar kata rahasia di kanvas digital, sementara pemain lain berlomba menebak kata tersebut secepat mungkin untuk mengumpulkan poin tertinggi.
+Sketchin adalah aplikasi permainan tebak gambar multipemain (multiplayer) berbasis web yang berjalan secara real-time. Pemain bergantian menggambar kata rahasia di kanvas digital, sementara pemain lain berlomba menebak kata tersebut secepat mungkin untuk mengumpulkan poin tertinggi.
 
 Aplikasi ini dibangun menggunakan arsitektur client-side murni dengan Vanilla JavaScript dan Vite, memanfaatkan Supabase Realtime serta PostgreSQL RPC untuk sinkronisasi state dan data room berkecepatan tinggi tanpa memerlukan server terpisah.
 
@@ -55,7 +55,7 @@ Aplikasi ini dibangun menggunakan arsitektur client-side murni dengan Vanilla Ja
 ## Struktur Direktori
 
 ```
-tebak-gambar/
+sketchin/
 ├── index.html                           # Struktur markup antarmuka pengguna
 ├── package.json                         # Konfigurasi dependensi dan skrip proyek
 ├── vite.config.js                       # Konfigurasi build tool Vite
@@ -68,7 +68,8 @@ tebak-gambar/
 │   ├── scoring-leaderboard.test.js      # Uji rumus perhitungan poin dan peringkat
 │   └── overload-kick-layout.test.js     # Uji pembatasan ukuran kanvas, siaran kick, dan ketahanan room
 └── public/
-    └── favicon.svg                      # Ikon aplikasi
+    ├── favicon.svg                      # Ikon aplikasi
+    └── favicon-question.svg             # Ikon alternatif peramban
 ```
 
 ---
@@ -83,7 +84,7 @@ tebak-gambar/
 
 ## Konfigurasi Lingkungan
 
-Buat file bernama `.env` di dalam direktori `tebak-gambar/` dengan format berikut:
+Buat file bernama `.env` di dalam direktori proyek dengan format berikut:
 
 ```env
 VITE_SUPABASE_URL=https://proyek-anda.supabase.co
@@ -153,7 +154,7 @@ node tests/overload-kick-layout.test.js
    - **Framework preset**: `Vite`
    - **Build command**: `npm run build`
    - **Build output directory**: `dist`
-   - **Root directory**: `tebak-gambar` (atau kosongkan jika repositori berada di root)
+   - **Root directory**: *(kosongkan jika repositori berada di root, atau isi dengan nama subdirektori)*
 5. Masukkan variabel lingkungan pada bagian **Environment variables**:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
@@ -174,5 +175,5 @@ node tests/overload-kick-layout.test.js
    ```
 4. Unggah direktori kompilasi ke Cloudflare Pages:
    ```bash
-   wrangler pages deploy dist --project-name tebak-gambar
+   wrangler pages deploy dist --project-name sketchin
    ```
