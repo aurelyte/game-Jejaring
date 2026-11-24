@@ -113,7 +113,7 @@
           <!-- Header: Kode Room & Status -->
           <div class="waiting-header">
             <div class="waiting-code-box">
-              <span class="waiting-code-label">KODE ROOM</span>
+              <span class="waiting-code-label">Kode Room</span>
               <div class="waiting-code-row">
                 <span id="waitingRoomCode" class="waiting-room-code">—</span>
                 <button id="btnCopyCode" class="btn-copy" title="Salin kode room" aria-label="Salin kode room">
@@ -122,22 +122,14 @@
               </div>
             </div>
             <div class="waiting-status-badges">
-              <span class="status-badge status-badge--waiting">
-                <span class="pulse-dot"></span> Menunggu Pemain
-              </span>
               <span id="waitingPlayerCountBadge" class="player-count-badge">1/8 Pemain</span>
             </div>
           </div>
 
-          <p class="waiting-subtext">
-            Bagikan kode room di atas kepada temanmu. Permainan akan dimulai saat Host menekan tombol mulai.
-          </p>
-
           <!-- Daftar Pemain -->
           <div class="waiting-players-section">
             <div class="waiting-players-header">
-              <h3 class="waiting-players-title">Pemain di Studio</h3>
-              <span class="waiting-players-caption">Real-time presence</span>
+              <h3 class="waiting-players-title">Pemain di Room</h3>
             </div>
             <ul id="waitingPlayerList" class="waiting-player-list" aria-live="polite">
               <!-- Rendered via JS -->
@@ -151,32 +143,23 @@
 
               <!-- Pemilihan Jumlah Ronde -->
               <div class="round-picker">
-                <label for="roundCountSelect" class="round-picker-label">
-                  Jumlah Ronde
-                </label>
-                <div class="round-picker-row">
-                  <select id="roundCountSelect" class="round-select" aria-label="Pilih jumlah ronde">
-                    <option value="1">1 Ronde</option>
-                    <option value="2" selected>2 Ronde</option>
-                    <option value="3">3 Ronde</option>
-                    <option value="4">4 Ronde</option>
-                    <option value="5">5 Ronde</option>
-                  </select>
-                  <span class="round-picker-hint">per pemain menjadi penggambar</span>
-                </div>
+                <label for="roundCountSelect" class="round-picker-label">Jumlah Ronde:</label>
+                <select id="roundCountSelect" class="round-select" aria-label="Pilih jumlah ronde">
+                  <option value="1">1 Ronde</option>
+                  <option value="2" selected>2 Ronde</option>
+                  <option value="3">3 Ronde</option>
+                  <option value="4">4 Ronde</option>
+                  <option value="5">5 Ronde</option>
+                </select>
               </div>
 
-              <button id="btnStartGame" class="btn-primary btn-lg btn-start-game btn-tactile">
+              <button id="btnStartGame" class="btn-primary btn-lg btn-start-game">
                 <i data-lucide="play" class="ui-icon" aria-hidden="true"></i> Mulai Permainan
               </button>
-              <p class="host-random-hint">
-                Penggambar pertama dipilih secara acak dari semua pemain yang online.
-              </p>
             </div>
 
             <!-- Pesan khusus Non-Host -->
             <div id="nonHostWaitingNotice" class="non-host-waiting-notice hidden">
-              <span class="pulse-dot"></span>
               Menunggu host memulai permainan…
             </div>
 
@@ -305,7 +288,6 @@
 
           <!-- Power-up Bar (Fase 4b & 4c) -->
           <div class="powerup-bar" id="powerupBar" aria-label="Power-up">
-            <span class="powerup-title"><i data-lucide="zap" class="ui-icon" aria-hidden="true"></i> Power-up</span>
             <button id="btnPowerupReveal" class="btn-powerup btn-powerup--reveal" title="Buka 1 huruf acak bantuan (1x per ronde)">
               <i data-lucide="lightbulb" class="ui-icon" aria-hidden="true"></i> Intip Huruf <span class="powerup-badge">1x</span>
             </button>
@@ -336,19 +318,16 @@
                 maxlength="40"
                 spellcheck="false"
               />
-              <button type="submit" class="btn-submit btn-tactile">Kirim Tebakan</button>
+              <button type="submit" class="btn-submit">Kirim Tebakan</button>
             </div>
           </form>
 
           <!-- Feedback jawaban -->
           <p class="feedback" id="feedback" aria-live="assertive" aria-atomic="true"></p>
 
-          <!-- Skor statistik ronde sederhana -->
-          <p class="score-line">
-            <span class="score-stat score-stat--correct">Tebakan Tepat: <strong id="scoreCorrect">0</strong></span>
-            <span class="score-stat-divider">·</span>
-            <span class="score-stat score-stat--wrong">Meleset: <strong id="scoreWrong">0</strong></span>
-          </p>
+          <!-- Skor kompatibilitas JS -->
+          <span id="scoreCorrect" hidden>0</span>
+          <span id="scoreWrong" hidden>0</span>
         </section>
 
         <!-- ===================================================
@@ -376,9 +355,8 @@
             <div class="chat-header">
               <div class="chat-heading-group">
                 <i data-lucide="message-circle" class="chat-header-icon ui-icon" aria-hidden="true"></i>
-                <h2 class="chat-heading">Obrolan Studio</h2>
+                <h2 class="chat-heading">Obrolan</h2>
               </div>
-              <span class="chat-header-hint">Tebakan & Pesan</span>
             </div>
 
             <!-- Message list -->
@@ -390,12 +368,12 @@
                 type="text"
                 id="chatInput"
                 class="chat-input"
-                placeholder="Kirim pesan santai…"
+                placeholder="Kirim pesan…"
                 maxlength="200"
                 aria-label="Ketik pesan obrolan"
                 spellcheck="false"
               />
-              <button type="submit" class="btn-chat-send btn-tactile">Kirim</button>
+              <button type="submit" class="btn-chat-send">Kirim</button>
             </form>
           </section>
         </div>
