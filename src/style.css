@@ -198,13 +198,14 @@ body {
   display: none;
 }
 
-/* Input Nama Pemain */
+/* Input Nama Pemain - Completely flat, blends directly into page background */
 .name-block {
   margin-bottom: 2rem;
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem 1.5rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
 }
 
 .name-header-row {
@@ -261,7 +262,7 @@ body {
 
 .name-input:focus {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 0 0 2px rgba(145, 167, 154, 0.35);
   outline: none;
 }
 
