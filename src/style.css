@@ -438,7 +438,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius-md);
   cursor: pointer;
-  box-shadow: 0 4px 0 var(--accent-primary-shadow), 0 8px 16px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 4px 0 var(--accent-primary-shadow);
   transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.15s ease;
   user-select: none;
 }
@@ -449,7 +449,7 @@ body {
 
 .btn-primary:active:not(:disabled) {
   transform: translateY(3px);
-  box-shadow: 0 1px 0 var(--accent-primary-shadow), 0 4px 8px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 1px 0 var(--accent-primary-shadow);
 }
 
 .btn-primary:disabled {
@@ -462,6 +462,36 @@ body {
 .btn-primary.btn-lg {
   padding: 0.95rem 1.6rem;
   font-size: 1.05rem;
+}
+
+/* Tombol di Layar Lobby (Main Page): Tanpa glowing & tanpa efek hover */
+.lobby-screen .btn-primary,
+#btnCreateRoom,
+#btnJoinRoom {
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+.lobby-screen .btn-primary:hover,
+.lobby-screen .btn-primary:hover:not(:disabled),
+#btnCreateRoom:hover,
+#btnJoinRoom:hover {
+  filter: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+  background: var(--accent-primary) !important;
+}
+
+.lobby-screen .btn-primary:active,
+.lobby-screen .btn-primary:active:not(:disabled),
+#btnCreateRoom:active,
+#btnJoinRoom:active {
+  filter: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+  background: var(--accent-primary) !important;
 }
 
 .btn-icon {
