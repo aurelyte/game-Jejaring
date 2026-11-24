@@ -130,6 +130,21 @@ function setButtonLabel(button, icon, label) {
   renderUiIcons(button);
 }
 
+/* Memastikan tab browser segera menampilkan favicon tanda tanya (bypassing stale browser cache) */
+const FAVICON_QUESTION_DATA_URI = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23222624'/%3E%3Cpath d='M12.2 11.8C12.4 9.4 14.1 7.8 16.5 7.8C18.9 7.8 20.6 9.3 20.6 11.5C20.6 13.2 19.6 14.4 18.2 15.4C16.8 16.3 16.1 17.2 16.1 18.8V19.2H14.1V18.7C14.1 16.8 14.9 15.7 16.5 14.6C17.7 13.7 18.5 12.9 18.5 11.6C18.5 10.3 17.5 9.4 16.4 9.4C15.2 9.4 14.3 10.3 14.2 11.8H12.2ZM15.1 22.8C15.1 22.1 15.7 21.5 16.4 21.5C17.1 21.5 17.7 22.1 17.7 22.8C17.7 23.5 17.1 24.1 16.4 24.1C15.7 24.1 15.1 23.5 15.1 22.8Z' fill='%2391a79a' stroke='%2391a79a' stroke-width='0.8' stroke-linejoin='round'/%3E%3C/svg%3E";
+
+function ensureFavicon() {
+  let link = /** @type {HTMLLinkElement|null} */ (document.querySelector("link[rel*='icon']"));
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.type = 'image/svg+xml';
+  link.href = FAVICON_QUESTION_DATA_URI;
+}
+ensureFavicon();
+
 /* ============================================================
  * State Aplikasi
  * ============================================================ */
