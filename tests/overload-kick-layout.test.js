@@ -147,7 +147,7 @@ console.log('\n=== TEST 3: Kick Player Realtime Broadcast Event Flow ===');
   console.log('  PASS: Kick broadcast received accurately by all peers.');
 }
 
-console.log('\n=== TEST 4: Room Overload Simulation (> 8 Players) & Drawer Selection Resilience ===');
+console.log('\n=== TEST 4: Room Concurrency Simulation (Up to 8 Players) & Drawer Selection Resilience ===');
 {
   const roomCode = 'OVLD' + Math.random().toString(36).substring(2, 6).toUpperCase();
   const host = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
@@ -157,18 +157,18 @@ console.log('\n=== TEST 4: Room Overload Simulation (> 8 Players) & Drawer Selec
     p_code: roomCode,
     p_host_id: 'host_id',
     p_host_name: 'HostUser',
-    p_max_players: 16,
+    p_max_players: 8,
   });
 
   if (createErr) {
     console.warn('  (create_room_rpc error - fallback simulation):', createErr.message);
   } else {
-    console.log(`  Room created: ${roomCode}, max_players: ${createRes?.max_players || 16}`);
+    console.log(`  Room created: ${roomCode}, max_players: ${createRes?.max_players || 8}`);
   }
 
-  // 2. Simulate 10 players joining room
+  // 2. Simulate 7 peer players joining room (total 8 players with host)
   const joinResults = [];
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 7; i++) {
     const pid = `peer_${i}`;
     const pname = `Player_${i}`;
     const pClient = createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
@@ -181,7 +181,7 @@ console.log('\n=== TEST 4: Room Overload Simulation (> 8 Players) & Drawer Selec
   }
 
   const successCount = joinResults.filter(r => r.success).length;
-  console.log(`  Joined players: ${successCount}/10 accepted without ROOM_FULL error.`);
+  console.log(`  Joined players: ${successCount}/7 accepted without error.`);
 
   // 3. Test Drawer Selection Fallback if offline
   const onlineCandidates = [

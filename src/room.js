@@ -1038,7 +1038,7 @@ export async function dbCreateRoom(roomCode, playerId, playerName) {
       p_room_code:        roomCode,
       p_host_player_id:   playerId,
       p_host_player_name: playerName,
-      p_max_players:      16,
+      p_max_players:      8,
     });
 
     if (error) {

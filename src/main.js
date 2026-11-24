@@ -410,7 +410,7 @@ function renderWaitingPlayerList(members) {
     ? members
     : [{ id: getSelfKey(), name: getPlayerName(), is_host: state.isHost, online: true }];
 
-  waitingPlayerCountBadge.textContent = `${list.length}/16 Pemain`;
+  waitingPlayerCountBadge.textContent = `${list.length}/8 Pemain`;
   waitingPlayerList.innerHTML = '';
 
   list.forEach((p) => {
